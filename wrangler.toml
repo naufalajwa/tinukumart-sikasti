@@ -1,6 +1,9 @@
-name = "sikasti-pos"
-compatibility_date = "2026-04-11"
+name = "tinukumart-sikasti"
+compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
+
+# Ini adalah bagian yang paling penting untuk diperbaiki:
+main = "@astrojs/cloudflare/entrypoints/server"
 
 [[d1_databases]]
 binding = "DB"
@@ -9,8 +12,8 @@ database_id = "f44af473-33ba-44f6-856d-ed027d04c1be"
 
 [[kv_namespaces]]
 binding = "SESSION"
-id = "199eac29d56d4a1f982c5a0ea6f68649" # (ID KV kamu)
+id = "199eac29d56d4a1f982c5a0ea6f68649"
 
 [assets]
-directory = "./dist"  # <--- HAPUS "/client" DI SINI
+directory = "./dist"
 not_found_handling = "single-page-application"
