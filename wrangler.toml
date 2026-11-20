@@ -7,11 +7,10 @@ binding = "DB"
 database_name = "sikasti-db"
 database_id = "f44af473-33ba-44f6-856d-ed027d04c1be"
 
-[assets]
-directory = "./dist/client"
-not_found_handling = "single-page-application"
-
-# Tambahkan ini di bagian paling bawah wrangler.toml
 [[kv_namespaces]]
 binding = "SESSION"
-id = "199eac29d56d4a1f982c5a0ea6f68649" # <-- TEMPELKAN ID DARI LANGKAH 2 DI SINI
+id = "199eac29d56d4a1f982c5a0ea6f68649" # (ID KV kamu)
+
+[assets]
+directory = "./dist"  # <--- HAPUS "/client" DI SINI
+not_found_handling = "single-page-application"
