@@ -1,0 +1,343 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import { createDb } from '@db/index';
+import { konsinyasi } from '@db/schema';
+import { desc } from 'drizzle-orm';
+
+// 1. Session Kasir Check
+const userRole = Astro.cookies.get('user_role')?.value;
+const userNama = Astro.cookies.get('user_nama')?.value || 'Kasir';
+const userId = Astro.cookies.get('user_id')?.value;
+
+if (!userRole || userRole !== 'kasir') {
+  return Astro.redirect('/?error=' + encodeURIComponent('Sesi habis atau bukan kasir. Silakan login kembali.') + '&tab=kasir');
+}
+
+// 2. Format Tanggal Hari Ini
+function getTodayDateStr(): string {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return formatter.format(new Date());
+}
+
+const todayDate = getTodayDateStr();
+
+// 3. Database Query
+const dbBinding = Astro.locals?.runtime?.env?.DB;
+let allKonsinyasi: Array<typeof konsinyasi.$inferSelect> = [];
+
+if (dbBinding) {
+  const db = createDb(dbBinding);
+  allKonsinyasi = await db
+    .select()
+    .from(konsinyasi)
+    .orderBy(desc(konsinyasi.id));
+}
+
+const activeItems = allKonsinyasi.filter((k) => k.status === 'OPEN');
+const closedItems = allKonsinyasi.filter((k) => k.status === 'CLOSED');
+---
+
+<Layout title="Manajemen Barang Titipan (Konsinyasi)">
+  <div class="min-h-screen bg-surface flex flex-col font-body-md text-on-surface">
+    
+    <!-- Top Header -->
+    <header class="fixed top-0 left-0 right-0 z-40 bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.06)] border-b border-surface-container">
+      <div class="h-16 w-full px-margin-desktop flex items-center justify-between gap-space-md">
+        <div class="flex items-center gap-space-md">
+          <a href="/kasir/pos" class="h-9 px-3 rounded-lg bg-surface-container-low hover:bg-surface-container text-primary flex items-center gap-1.5 font-bold text-xs transition border border-surface-container">
+            <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+            <span>Kembali ke POS</span>
+          </a>
+          <div class="h-6 w-[1px] bg-outline-variant/50 hidden sm:block"></div>
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-secondary-gold text-[24px]">local_convenience_store</span>
+            <span class="font-headline-sm text-base font-bold text-primary">Modul Konsinyasi Mahasiswa (UC03 & UC06)</span>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <span class="font-body-sm text-xs text-on-surface-variant hidden sm:inline">Kasir: <strong>{userNama}</strong></span>
+          <button
+            type="button"
+            class="h-9 px-3.5 rounded-lg bg-primary hover:bg-primary-dark text-on-primary font-bold text-xs flex items-center gap-1.5 shadow-xs transition"
+            id="btnOpenNewTitipanModal"
+          >
+            <span class="material-symbols-outlined text-[16px]">add</span>
+            <span>Input Titipan Masuk [F4]</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 max-w-6xl w-full mx-auto pt-24 p-4 sm:p-6 lg:p-8 space-y-6">
+      
+      <!-- Metrics Card -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="bg-surface-container-lowest p-5 rounded-2xl border border-surface-container shadow-xs">
+          <span class="font-body-sm text-xs text-outline uppercase font-bold tracking-wider block">Total Titipan Aktif</span>
+          <span class="font-currency-display text-2xl font-extrabold text-primary mt-1 block">{activeItems.length} Produk</span>
+          <span class="font-body-sm text-xs text-on-surface-variant mt-0.5">Sedang dijual di booth hari ini</span>
+        </div>
+        <div class="bg-surface-container-lowest p-5 rounded-2xl border border-surface-container shadow-xs">
+          <span class="font-body-sm text-xs text-outline uppercase font-bold tracking-wider block">Total Terjual</span>
+          <span class="font-currency-display text-2xl font-extrabold text-secondary-gold mt-1 block">
+            {allKonsinyasi.reduce((acc, k) => acc + (k.qty_terjual || 0), 0)} Pcs
+          </span>
+          <span class="font-body-sm text-xs text-on-surface-variant mt-0.5">Dari seluruh transaksi konsinyasi</span>
+        </div>
+        <div class="bg-surface-container-lowest p-5 rounded-2xl border border-surface-container shadow-xs">
+          <span class="font-body-sm text-xs text-outline uppercase font-bold tracking-wider block">Selesai / Diretur</span>
+          <span class="font-currency-display text-2xl font-extrabold text-on-surface mt-1 block">{closedItems.length} Item</span>
+          <span class="font-body-sm text-xs text-on-surface-variant mt-0.5">Sudah direkonsiliasi sore</span>
+        </div>
+      </div>
+
+      <!-- Section: Titipan Aktif (Stok di Booth Hari Ini) -->
+      <div class="bg-surface-container-lowest rounded-2xl border border-surface-container shadow-xs overflow-hidden">
+        <div class="p-5 border-b border-surface-container flex items-center justify-between">
+          <div>
+            <h3 class="font-headline-sm text-base font-bold text-primary">Daftar Titipan Aktif (Stok Booth)</h3>
+            <p class="font-body-sm text-xs text-on-surface-variant mt-0.5">Lakukan pencatatan sisa fisik untuk menyelesaikan retur sore hari</p>
+          </div>
+          <span class="px-2.5 py-1 rounded-full bg-primary-fixed text-primary font-bold text-xs">
+            {activeItems.length} Aktif
+          </span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr class="bg-surface-container-low text-on-surface-variant text-xs uppercase font-bold tracking-wider border-b border-surface-container">
+                <th class="py-3 px-4">Nama Produk</th>
+                <th class="py-3 px-4">Penitip</th>
+                <th class="py-3 px-4 text-center">Masuk</th>
+                <th class="py-3 px-4 text-center">Terjual</th>
+                <th class="py-3 px-4 text-center">Sisa</th>
+                <th class="py-3 px-4 text-right">Harga Pokok</th>
+                <th class="py-3 px-4 text-right">Hak Penitip</th>
+                <th class="py-3 px-4 text-center">Aksi Retur (UC06)</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-container">
+              {activeItems.length === 0 ? (
+                <tr>
+                  <td colspan="8" class="py-10 text-center text-outline">
+                    <span class="material-symbols-outlined text-[40px] opacity-40">inventory_2</span>
+                    <p class="mt-1 font-semibold text-sm">Tidak ada barang titipan aktif saat ini.</p>
+                  </td>
+                </tr>
+              ) : (
+                activeItems.map((item) => {
+                  const hakPenitip = (item.qty_terjual || 0) * item.harga_awal;
+                  return (
+                    <tr class="hover:bg-surface-container-low/50 transition">
+                      <td class="py-3.5 px-4 font-bold text-primary">{item.nama_produk}</td>
+                      <td class="py-3.5 px-4 text-on-surface-variant text-xs">{item.penitip}</td>
+                      <td class="py-3.5 px-4 text-center font-label-numeric font-bold">{item.qty_masuk}</td>
+                      <td class="py-3.5 px-4 text-center font-label-numeric font-bold text-secondary-gold">{item.qty_terjual || 0}</td>
+                      <td class="py-3.5 px-4 text-center font-label-numeric font-bold text-primary">{item.qty_sisa}</td>
+                      <td class="py-3.5 px-4 text-right font-label-numeric">Rp {item.harga_awal.toLocaleString('id-ID')}</td>
+                      <td class="py-3.5 px-4 text-right font-label-numeric font-bold text-primary">Rp {hakPenitip.toLocaleString('id-ID')}</td>
+                      <td class="py-3.5 px-4 text-center">
+                        <div class="inline-flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="0"
+                            max={item.qty_masuk}
+                            value={item.qty_sisa}
+                            class="input-sisa-retur w-16 h-8 text-center bg-surface-container-low border border-outline-variant rounded-lg text-xs font-bold"
+                            data-id={item.id}
+                            title="Masukkan sisa fisik aktual di booth"
+                          />
+                          <button
+                            type="button"
+                            class="btn-submit-retur h-8 px-2.5 rounded-lg bg-secondary-gold hover:bg-yellow-600 text-white font-bold text-xs transition shadow-2xs active:scale-95"
+                            data-id={item.id}
+                            title="Tutup & Selesaikan Retur"
+                          >
+                            Retur
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section: Riwayat Rekonsiliasi Selesai (CLOSED) -->
+      {closedItems.length > 0 && (
+        <div class="bg-surface-container-lowest rounded-2xl border border-surface-container shadow-xs overflow-hidden">
+          <div class="p-5 border-b border-surface-container">
+            <h3 class="font-headline-sm text-base font-bold text-on-surface">Riwayat Titipan Selesai / Diretur</h3>
+            <p class="font-body-sm text-xs text-on-surface-variant mt-0.5">Rekapitulasi penjualan konsinyasi yang sudah diretur dan dibayarkan</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr class="bg-surface-container-low text-on-surface-variant text-xs uppercase font-bold tracking-wider border-b border-surface-container">
+                  <th class="py-3 px-4">Tanggal</th>
+                  <th class="py-3 px-4">Nama Produk</th>
+                  <th class="py-3 px-4">Penitip</th>
+                  <th class="py-3 px-4 text-center">Masuk</th>
+                  <th class="py-3 px-4 text-center">Terjual</th>
+                  <th class="py-3 px-4 text-center">Sisa Diretur</th>
+                  <th class="py-3 px-4 text-right">Total Hak Penitip</th>
+                  <th class="py-3 px-4 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-surface-container">
+                {closedItems.map((item) => {
+                  const hakPenitip = (item.qty_terjual || 0) * item.harga_awal;
+                  return (
+                    <tr class="text-on-surface-variant">
+                      <td class="py-3 px-4 font-mono text-xs">{item.tanggal}</td>
+                      <td class="py-3 px-4 font-semibold text-on-surface">{item.nama_produk}</td>
+                      <td class="py-3 px-4 text-xs">{item.penitip}</td>
+                      <td class="py-3 px-4 text-center font-mono">{item.qty_masuk}</td>
+                      <td class="py-3 px-4 text-center font-mono font-bold text-primary">{item.qty_terjual}</td>
+                      <td class="py-3 px-4 text-center font-mono">{item.qty_sisa}</td>
+                      <td class="py-3 px-4 text-right font-mono font-bold text-primary">Rp {hakPenitip.toLocaleString('id-ID')}</td>
+                      <td class="py-3 px-4 text-center">
+                        <span class="px-2 py-0.5 rounded-full bg-surface-container text-outline text-[11px] font-bold">CLOSED</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+    </main>
+
+    <!-- Modal Input Titipan Baru (UC03) -->
+    <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs hidden flex items-center justify-center p-4" id="modalInputTitipanPage">
+      <div class="w-full max-w-lg bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container overflow-hidden flex flex-col">
+        <div class="px-5 py-4 bg-primary text-on-primary flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="material-symbols-outlined text-secondary-container text-[24px]">post_add</span>
+            <div>
+              <h3 class="font-headline-sm text-base font-bold">Input Titipan Masuk (Pagi)</h3>
+              <p class="font-body-sm text-[11px] text-primary-fixed">Pencatatan produk UMKM / jualan mahasiswa masuk</p>
+            </div>
+          </div>
+          <button type="button" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white" id="btnCloseNewTitipanModal">
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+
+        <form class="p-5 flex flex-col gap-3.5" id="formNewTitipanPage">
+          <div class="flex flex-col gap-1">
+            <label class="font-label-action text-xs font-bold text-on-surface">Nama Produk Titipan:</label>
+            <input class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg text-sm" id="namaProdukInput" placeholder="Contoh: Risol Mayo Beef Melt" required type="text" />
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label class="font-label-action text-xs font-bold text-on-surface">Jumlah Titipan (Pcs):</label>
+            <input class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg font-mono text-sm font-bold" id="qtyInput" min="1" placeholder="20" required type="number" value="20" />
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label class="font-label-action text-xs font-bold text-on-surface">Harga Pokok Penitip (Rp):</label>
+            <input class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg font-mono text-sm font-bold" id="hargaInput" placeholder="2500" required type="number" value="2500" />
+            <span class="text-[11px] text-outline">Hak per pcs yang akan dibayarkan ke penitip saat barang laku.</span>
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label class="font-label-action text-xs font-bold text-on-surface">Nama Penitip & Kontak:</label>
+            <input class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg text-sm" id="penitipInput" placeholder="Contoh: Sarah Aulia (0812-xxxx / FEB)" required type="text" />
+          </div>
+
+          <button type="submit" class="mt-2 w-full h-11 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-bold text-sm shadow-md transition flex items-center justify-center gap-1.5 active:scale-95">
+            <span class="material-symbols-outlined text-[18px]">save</span>
+            <span>Simpan Barang Titipan</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <script is:inline>
+    const modal = document.getElementById('modalInputTitipanPage');
+    const openBtn = document.getElementById('btnOpenNewTitipanModal');
+    const closeBtn = document.getElementById('btnCloseNewTitipanModal');
+
+    openBtn?.addEventListener('click', () => modal?.classList.remove('hidden'));
+    closeBtn?.addEventListener('click', () => modal?.classList.add('hidden'));
+
+    // Submit New Titipan (UC03)
+    document.getElementById('formNewTitipanPage')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        action: 'input',
+        nama_produk: document.getElementById('namaProdukInput').value,
+        qty_masuk: document.getElementById('qtyInput').value,
+        harga_awal: document.getElementById('hargaInput').value,
+        penitip: document.getElementById('penitipInput').value,
+      };
+
+      try {
+        const res = await fetch('/api/konsinyasi', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert('Barang titipan berhasil dicatat!');
+          location.reload();
+        } else {
+          alert(data.error || 'Gagal menyimpan');
+        }
+      } catch (err) {
+        alert('Terjadi kesalahan koneksi.');
+      }
+    });
+
+    // Retur Sisa Titipan (UC06)
+    document.querySelectorAll('.btn-submit-retur').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        const input = document.querySelector(`.input-sisa-retur[data-id="${id}"]`);
+        const sisa = Number(input?.value || 0);
+
+        if (!confirm('Apakah Anda yakin ingin menyelesaikan retur produk ini dengan sisa ' + sisa + ' pcs?')) {
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/konsinyasi', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'retur',
+              id,
+              qty_sisa_aktual: sisa,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            alert(data.message);
+            location.reload();
+          } else {
+            alert(data.error || 'Gagal memproses retur.');
+          }
+        } catch (e) {
+          alert('Terjadi kesalahan koneksi saat memproses retur.');
+        }
+      });
+    });
+  </script>
+</Layout>

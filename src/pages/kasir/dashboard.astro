@@ -1,0 +1,420 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import { createDb } from '@db/index';
+import { shifts, shiftPenjaga, users } from '@db/schema';
+import { eq, and } from 'drizzle-orm';
+
+// 1. Verifikasi Session Kasir via Cookies
+const userRole = Astro.cookies.get('user_role')?.value;
+const userNama = Astro.cookies.get('user_nama')?.value || 'Kasir';
+const userId = Astro.cookies.get('user_id')?.value;
+
+if (!userRole || userRole !== 'kasir' || !userId) {
+  return Astro.redirect('/?error=' + encodeURIComponent('Sesi habis atau bukan kasir. Silakan login kembali.') + '&tab=kasir');
+}
+
+// 2. Format Tanggal Hari Ini (WIB Asia/Jakarta)
+function getTodayDateStr(): string {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return formatter.format(new Date());
+}
+
+function formatTanggalIndonesia(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-');
+  const bulan = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+  return `${parseInt(day, 10)} ${bulan[parseInt(month, 10) - 1]} ${year}`;
+}
+
+const todayDate = getTodayDateStr();
+const todayDisplay = formatTanggalIndonesia(todayDate);
+
+// 3. Notifikasi Flash Message dari Query Params
+const successMsg = Astro.url.searchParams.get('success') || '';
+const errorMsg = Astro.url.searchParams.get('error') || '';
+
+// 4. Query Database D1: Cek Shift OPEN Hari Ini
+const dbBinding = Astro.locals?.runtime?.env?.DB;
+let activeShift: typeof shifts.$inferSelect | null = null;
+let attendantNames: string[] = [];
+
+if (dbBinding) {
+  const db = createDb(dbBinding);
+
+  const [openShift] = await db
+    .select()
+    .from(shifts)
+    .where(and(eq(shifts.status, 'OPEN'), eq(shifts.tanggal, todayDate)))
+    .limit(1);
+
+  if (openShift) {
+    activeShift = openShift;
+
+    // Ambil daftar penjaga shift aktif
+    const attendants = await db
+      .select({
+        id: users.id,
+        nama: users.nama,
+      })
+      .from(shiftPenjaga)
+      .innerJoin(users, eq(shiftPenjaga.user_id, users.id))
+      .where(eq(shiftPenjaga.shift_id, openShift.id));
+
+    attendantNames = attendants.map((a) => a.nama);
+  }
+}
+---
+
+<Layout title="Dashboard Kasir">
+  <div class="min-h-screen bg-surface flex flex-col">
+    
+    <!-- TOP HEADER -->
+    <header class="fixed top-0 left-0 right-0 z-40 bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.06)] border-b border-surface-container">
+      <div class="h-16 w-full px-margin-desktop flex items-center justify-between gap-space-md">
+        <!-- Brand & Booth Location -->
+        <div class="flex items-center gap-space-md shrink-0">
+          <div class="flex items-center gap-space-xs">
+            <span class="material-symbols-outlined text-primary text-[28px]">storefront</span>
+            <span class="font-headline-sm text-lg font-bold text-primary">TinukuMart</span>
+          </div>
+          <div class="h-6 w-[1.5px] bg-outline-variant/60 hidden sm:block"></div>
+          <div class="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-surface-container-low rounded-lg border border-surface-container">
+            <span class="material-symbols-outlined text-primary text-[18px]">location_on</span>
+            <span class="font-label-action text-[13px] text-on-surface font-semibold">Kantin Pusat - Booth #04</span>
+          </div>
+        </div>
+
+        <!-- Real-time Clock, Cashier Status & Action Buttons -->
+        <div class="flex items-center gap-space-md">
+          <div class="hidden md:flex flex-col text-right pr-2">
+            <span class="font-label-numeric text-[13px] font-bold text-primary tracking-tight" id="liveClockDisplay">--:--:-- WIB</span>
+            <span class="font-body-sm text-[11px] text-on-surface-variant">{todayDisplay}</span>
+          </div>
+          <div class="h-6 w-[1px] bg-outline-variant/50 hidden md:block"></div>
+
+          <!-- Active Cashier Profile -->
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-xs shadow-xs">
+              {userNama.substring(0, 2).toUpperCase()}
+            </div>
+            <div class="hidden sm:flex flex-col text-left">
+              <span class="font-label-action text-[13px] font-bold text-primary leading-tight">{userNama}</span>
+              <span class="font-body-sm text-[11px] text-on-surface-variant font-medium">Penjaga Shift #{userId}</span>
+            </div>
+          </div>
+
+          <!-- Tombol Keluar -->
+          <a
+            href="/api/auth?action=logout"
+            class="h-9 px-3 rounded-lg bg-surface-container-low hover:bg-error-container hover:text-error border border-outline-variant text-on-surface-variant flex items-center gap-1.5 font-label-action text-[12px] font-bold transition-all shadow-xs"
+            title="Keluar dari sistem"
+          >
+            <span class="material-symbols-outlined text-[16px]">logout</span>
+            <span class="hidden sm:inline">Keluar</span>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <!-- Konten Utama Dashboard Kasir -->
+    <main class="flex-1 max-w-5xl w-full mx-auto pt-24 p-4 sm:p-6 lg:p-8 space-y-6">
+
+      <!-- Notifikasi Alert Sukses -->
+      {successMsg && (
+        <div class="bg-primary-fixed/40 border border-primary/20 text-on-surface rounded-xl p-4 flex items-center gap-3 shadow-xs">
+          <span class="material-symbols-outlined text-primary text-[24px] shrink-0">check_circle</span>
+          <div class="flex-1 text-sm font-medium">
+            {successMsg}
+          </div>
+        </div>
+      )}
+
+      <!-- Notifikasi Alert Error -->
+      {errorMsg && (
+        <div class="bg-error-container/50 border border-error/20 text-on-surface rounded-xl p-4 flex items-center gap-3 shadow-xs">
+          <span class="material-symbols-outlined text-error text-[24px] shrink-0">error</span>
+          <div class="flex-1 text-sm font-medium text-error">
+            {errorMsg}
+          </div>
+        </div>
+      )}
+
+      <!-- Kartu Sapaan Kasir -->
+      <div class="bg-primary rounded-2xl p-6 sm:p-8 text-on-primary shadow-lg relative overflow-hidden">
+        <div class="absolute -right-10 -bottom-10 w-48 h-48 bg-secondary-container/10 rounded-full blur-2xl pointer-events-none"></div>
+
+        <div class="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-secondary-container border border-white/20 text-xs font-bold uppercase tracking-wider mb-2">
+              <span class="w-2 h-2 rounded-full bg-secondary-container animate-pulse"></span>
+              Operasional Booth TinukuMart
+            </div>
+            <h2 class="font-headline-lg text-2xl sm:text-3xl font-extrabold tracking-tight">
+              Halo, {userNama}! 👋
+            </h2>
+            <p class="font-body-md text-primary-fixed-dim text-sm mt-1">
+              Hari ini: <strong class="text-white">{todayDisplay}</strong> &bull; Pastikan uang fisik modal awal di laci kasir sudah sesuai sebelum melayani pembeli.
+            </p>
+          </div>
+
+          <div class="flex-shrink-0">
+            {activeShift ? (
+              <span class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary-container text-on-secondary-container text-xs font-extrabold shadow-sm">
+                <span class="w-2 h-2 rounded-full bg-on-secondary-container animate-ping"></span>
+                SHIFT SEDANG BERJALAN
+              </span>
+            ) : (
+              <span class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-primary-fixed border border-white/20 text-xs font-bold">
+                <span class="w-2 h-2 rounded-full bg-secondary-container"></span>
+                BELUM ADA SHIFT BUKA
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================== -->
+      <!-- KONDISI A: SUDAH ADA SHIFT OPEN (Shift Sedang Berjalan)        -->
+      <!-- ============================================================== -->
+      {activeShift ? (
+        <div class="space-y-6">
+          <div class="bg-surface-container-lowest rounded-2xl p-6 sm:p-8 shadow-sm border border-surface-container">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-surface-container">
+              <div>
+                <span class="inline-block px-3 py-1 bg-primary-fixed text-primary text-xs font-extrabold rounded-full uppercase tracking-wider mb-2">
+                  Shift Aktif #{activeShift.id}
+                </span>
+                <h3 class="font-headline-lg text-2xl font-black text-primary">
+                  Shift Ke-{activeShift.shift_ke} Sedang Berjalan
+                </h3>
+                <p class="font-body-md text-sm text-on-surface-variant mt-1">
+                  Sesi kasir booth telah dibuka dan siap melayani transaksi pembeli kampus.
+                </p>
+              </div>
+
+              <!-- Tombol Utama: Mulai Transaksi (Masuk POS) -->
+              <a
+                href="/kasir/pos"
+                class="inline-flex items-center justify-center gap-3 px-8 py-4 rounded-xl bg-secondary-container hover:bg-yellow-400 text-on-secondary-container font-extrabold text-base shadow-md transition transform hover:-translate-y-0.5 active:scale-95 group text-center"
+              >
+                <span>Mulai Transaksi (Masuk POS)</span>
+                <span class="material-symbols-outlined text-[22px] transition-transform group-hover:translate-x-1">arrow_forward</span>
+              </a>
+            </div>
+
+            <!-- Detail Informasi Shift Berjalan -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6">
+              
+              <!-- Giliran Shift -->
+              <div class="bg-surface-container-low rounded-xl p-4 border border-surface-container">
+                <p class="font-label-action text-xs font-bold text-on-surface-variant uppercase tracking-wider">Giliran Shift</p>
+                <p class="font-headline-sm text-xl font-extrabold text-primary mt-1">
+                  Shift {activeShift.shift_ke}
+                </p>
+                <p class="font-body-sm text-xs text-outline mt-0.5">Status: <span class="text-primary font-bold">OPEN</span></p>
+              </div>
+
+              <!-- Modal Awal di Laci -->
+              <div class="bg-surface-container-low rounded-xl p-4 border border-surface-container">
+                <p class="font-label-action text-xs font-bold text-on-surface-variant uppercase tracking-wider">Modal Awal Laci</p>
+                <p class="font-currency-display text-xl font-extrabold text-on-surface mt-1">
+                  Rp {activeShift.modal_awal.toLocaleString('id-ID')}
+                </p>
+                <p class="font-body-sm text-xs text-outline mt-0.5">Uang fisik di laci kasir</p>
+              </div>
+
+              <!-- Penjaga Bertugas -->
+              <div class="bg-surface-container-low rounded-xl p-4 border border-surface-container">
+                <p class="font-label-action text-xs font-bold text-on-surface-variant uppercase tracking-wider">Penjaga Bertugas</p>
+                <p class="font-headline-sm text-xl font-extrabold text-on-surface mt-1">
+                  {attendantNames.length > 0 ? attendantNames.join(', ') : userNama}
+                </p>
+                <p class="font-body-sm text-xs text-outline mt-0.5">Penanggung jawab shift aktif</p>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Menu Cepat Modul Kasir -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <a
+              href="/kasir/konsinyasi"
+              class="flex items-center gap-4 bg-surface-container-lowest p-5 rounded-xl border border-surface-container shadow-xs hover:border-primary transition group"
+            >
+              <div class="w-12 h-12 rounded-xl bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold shrink-0 group-hover:scale-105 transition">
+                <span class="material-symbols-outlined text-[24px]">local_convenience_store</span>
+              </div>
+              <div>
+                <h4 class="font-headline-sm text-base font-bold text-on-surface group-hover:text-primary transition">Input Titipan Konsinyasi</h4>
+                <p class="font-body-sm text-xs text-on-surface-variant mt-0.5">Pencatatan titipan masuk pagi (UC03) & retur malam (UC06)</p>
+              </div>
+            </a>
+
+            <a
+              href="/kasir/pos"
+              class="flex items-center gap-4 bg-surface-container-lowest p-5 rounded-xl border border-surface-container shadow-xs hover:border-primary transition group"
+            >
+              <div class="w-12 h-12 rounded-xl bg-primary-fixed text-primary flex items-center justify-center font-bold shrink-0 group-hover:scale-105 transition">
+                <span class="material-symbols-outlined text-[24px]">point_of_sale</span>
+              </div>
+              <div>
+                <h4 class="font-headline-sm text-base font-bold text-on-surface group-hover:text-primary transition">Kasir Terminal POS</h4>
+                <p class="font-body-sm text-xs text-on-surface-variant mt-0.5">Buka layar penjualan Tunai / QRIS, Estafet & Tutup Booth</p>
+              </div>
+            </a>
+          </div>
+        </div>
+      ) : (
+        /* ============================================================== */
+        /* KONDISI B: BELUM ADA SHIFT OPEN (Form Buka Shift Baru - UC02)  */
+        /* ============================================================== */
+        <div class="bg-surface-container-lowest rounded-2xl p-6 sm:p-8 shadow-sm border border-surface-container">
+          
+          <div class="max-w-xl mx-auto">
+            
+            <div class="text-center mb-6">
+              <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary-fixed text-primary mb-3 shadow-inner">
+                <span class="material-symbols-outlined text-[32px]">schedule</span>
+              </div>
+              <h3 class="font-headline-lg text-2xl font-black text-primary tracking-tight">
+                Buka Shift Baru (UC02)
+              </h3>
+              <p class="font-body-sm text-sm text-on-surface-variant mt-1">
+                Tentukan nomor giliran shift dan masukkan jumlah uang modal awal yang ada di laci kasir saat ini.
+              </p>
+            </div>
+
+            <form id="form-buka-shift" method="POST" action="/api/shift" class="space-y-6">
+              <input type="hidden" name="action" value="open" />
+
+              <!-- 1. Pilihan Shift Ke (1 - 5) -->
+              <div>
+                <label class="block font-label-action text-xs font-bold text-on-surface uppercase tracking-wider mb-2.5">
+                  1. Pilih Giliran Shift
+                </label>
+                <div class="grid grid-cols-5 gap-2">
+                  {[1, 2, 3, 4, 5].map((num) => (
+                    <label class="cursor-pointer">
+                      <input
+                        type="radio"
+                        name="shift_ke"
+                        value={num}
+                        checked={num === 1}
+                        class="peer sr-only"
+                      />
+                      <div class="py-3 text-center rounded-xl border border-surface-container text-on-surface font-bold text-sm peer-checked:border-primary peer-checked:bg-primary peer-checked:text-on-primary transition hover:bg-surface-container-low shadow-xs">
+                        Shift {num}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <!-- 2. Input Modal Awal -->
+              <div>
+                <label for="input-modal-awal" class="block font-label-action text-xs font-bold text-on-surface uppercase tracking-wider mb-2">
+                  2. Modal Awal (Uang Tunai di Laci)
+                </label>
+                <div class="relative rounded-xl shadow-xs">
+                  <span class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-primary font-extrabold text-base">
+                    Rp
+                  </span>
+                  <input
+                    type="number"
+                    id="input-modal-awal"
+                    name="modal_awal"
+                    min="0"
+                    step="1000"
+                    placeholder="Contoh: 100000"
+                    value="100000"
+                    required
+                    class="w-full pl-12 pr-4 py-3 bg-surface-container-low text-on-surface font-currency-display font-extrabold text-xl rounded-xl border border-outline-variant focus:border-primary focus:bg-surface-container-lowest focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
+                  />
+                </div>
+                
+                <!-- Preset Modal Cepat -->
+                <div class="flex flex-wrap items-center gap-1.5 mt-2.5">
+                  <span class="font-body-sm text-xs text-outline font-medium">Pilihan cepat:</span>
+                  {[50000, 100000, 150000, 200000, 300000].map((nominal) => (
+                    <button
+                      type="button"
+                      class="btn-preset-modal font-label-numeric text-xs font-semibold px-2.5 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface border border-surface-container transition"
+                      data-amount={nominal}
+                    >
+                      Rp {nominal.toLocaleString('id-ID')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <!-- 3. Teks Informatif Penjaga Sesuai Ketentuan -->
+              <div class="bg-surface-container-low rounded-xl p-4 border border-surface-container text-xs text-on-surface flex items-start gap-3">
+                <span class="material-symbols-outlined text-primary text-[20px] shrink-0 mt-0.5">account_circle</span>
+                <div class="space-y-1">
+                  <p class="font-bold text-sm text-primary">
+                    Penjaga Shift: <span class="underline">{userNama}</span> (ID Petugas: #{userId})
+                  </p>
+                  <p class="text-on-surface-variant leading-relaxed">
+                    Shift ini akan otomatis dicatat atas nama Anda. Pergantian penjaga shift dapat dilakukan langsung dari layar kasir.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Tombol Submit Buka Shift -->
+              <button
+                type="submit"
+                class="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-extrabold text-base transition duration-200 shadow-md active:scale-95 group font-label-action"
+              >
+                <span>Buka Shift Sekarang</span>
+                <span class="material-symbols-outlined text-secondary-container transition-transform group-hover:translate-x-1">arrow_forward</span>
+              </button>
+
+            </form>
+
+          </div>
+
+        </div>
+      )}
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="py-4 text-center font-body-sm text-xs text-outline border-t border-surface-container mt-auto">
+      SIKASTI POS &bull; Hak Cipta &copy; {new Date().getFullYear()} Tinuku Mart
+    </footer>
+
+  </div>
+
+  <!-- Client-side script untuk Live Clock & Preset Modal Awal -->
+  <script is:inline>
+    // Live Clock
+    function updateClock() {
+      const now = new Date();
+      const clockEl = document.getElementById('liveClockDisplay');
+      if (clockEl) {
+        clockEl.textContent = now.toLocaleTimeString('id-ID') + ' WIB';
+      }
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Preset Modal
+    const inputModal = document.getElementById('input-modal-awal');
+    document.querySelectorAll('.btn-preset-modal').forEach((button) => {
+      button.addEventListener('click', () => {
+        const amount = button.getAttribute('data-amount');
+        if (inputModal && amount) {
+          inputModal.value = amount;
+          inputModal.focus();
+        }
+      });
+    });
+  </script>
+</Layout>

@@ -1,0 +1,96 @@
+---
+interface Props {
+  activePath: 'dashboard' | 'produk' | 'penjaga' | 'laporan';
+  userNama?: string;
+}
+
+const { activePath, userNama = 'Admin' } = Astro.props;
+
+const navItems = [
+  { id: 'dashboard', label: 'Ringkasan Monitoring', href: '/admin/dashboard', icon: 'dashboard' },
+  { id: 'produk', label: 'Manajemen Produk', href: '/admin/produk', icon: 'inventory_2' },
+  { id: 'penjaga', label: 'Data Penjaga Shift', href: '/admin/penjaga', icon: 'group' },
+  { id: 'laporan', label: 'Laporan Keuangan', href: '/admin/laporan', icon: 'bar_chart' },
+];
+---
+
+<aside class="fixed left-0 top-0 h-full w-64 bg-primary text-on-primary z-50 flex flex-col justify-between shadow-lg">
+  <div class="flex flex-col">
+    <!-- Brand Header -->
+    <div class="h-16 px-5 flex items-center gap-3 border-b border-white/10">
+      <div class="w-9 h-9 rounded-xl bg-surface-container-lowest text-primary flex items-center justify-center font-bold shadow-xs">
+        <span class="material-symbols-outlined text-[24px]">storefront</span>
+      </div>
+      <div class="flex flex-col">
+        <span class="font-headline-sm text-base font-bold text-white leading-tight">TinukuMart</span>
+        <span class="font-label-badge text-[10px] text-primary-fixed tracking-wider uppercase font-bold">
+          Panel Administrator
+        </span>
+      </div>
+    </div>
+
+    <!-- Navigation Menu -->
+    <nav class="flex flex-col gap-1.5 p-4">
+      <span class="text-[11px] font-bold text-primary-fixed-dim uppercase tracking-wider px-3 mb-1">
+        Menu Utama
+      </span>
+      {navItems.map((item) => {
+        const isActive = activePath === item.id;
+        return (
+          <a
+            href={item.href}
+            class={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-label-action text-sm font-semibold transition-all ${
+              isActive
+                ? 'bg-secondary-container text-on-secondary-container font-bold shadow-sm'
+                : 'text-primary-fixed hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <span class="material-symbols-outlined text-[20px]">{item.icon}</span>
+            <span>{item.label}</span>
+          </a>
+        );
+      })}
+
+      <div class="my-3 border-t border-white/10"></div>
+
+      <span class="text-[11px] font-bold text-primary-fixed-dim uppercase tracking-wider px-3 mb-1">
+        Akses Cepat Kasir
+      </span>
+      <a
+        href="/kasir/pos"
+        class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-primary-fixed hover:bg-white/10 hover:text-white font-label-action text-sm font-semibold transition-all"
+        target="_blank"
+      >
+        <span class="material-symbols-outlined text-[20px]">point_of_sale</span>
+        <span>Buka Kasir POS &nearr;</span>
+      </a>
+      <a
+        href="/kasir/konsinyasi"
+        class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-primary-fixed hover:bg-white/10 hover:text-white font-label-action text-sm font-semibold transition-all"
+      >
+        <span class="material-symbols-outlined text-[20px]">local_convenience_store</span>
+        <span>Modul Titipan Konsinyasi</span>
+      </a>
+    </nav>
+  </div>
+
+  <!-- Bottom Admin Profile & Logout -->
+  <div class="p-4 border-t border-white/10 flex flex-col gap-3 bg-primary-dark">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold text-xs shadow-xs">
+        {userNama.substring(0, 2).toUpperCase()}
+      </div>
+      <div class="flex flex-col min-w-0">
+        <span class="font-bold text-sm text-white truncate">{userNama}</span>
+        <span class="text-[11px] text-primary-fixed-dim">Administrator Booth #04</span>
+      </div>
+    </div>
+    <a
+      href="/api/auth?action=logout"
+      class="w-full py-2 px-3 rounded-lg bg-white/10 hover:bg-error hover:text-white text-primary-fixed text-xs font-bold transition flex items-center justify-center gap-2"
+    >
+      <span class="material-symbols-outlined text-[16px]">logout</span>
+      <span>Keluar (Logout)</span>
+    </a>
+  </div>
+</aside>

@@ -1,0 +1,431 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import AdminSidebar from '@/components/AdminSidebar.astro';
+import { createDb } from '@db/index';
+import { produk, konsinyasi } from '@db/schema';
+import { eq, desc } from 'drizzle-orm';
+
+// 1. Verifikasi Session Admin
+const userRole = Astro.cookies.get('user_role')?.value;
+const userNama = Astro.cookies.get('user_nama')?.value || 'Admin';
+
+if (!userRole || userRole !== 'admin') {
+  return Astro.redirect('/?error=' + encodeURIComponent('Akses ditolak. Silakan login sebagai administrator.') + '&tab=admin');
+}
+
+// 2. Handle POST Request untuk CRUD Produk (SSR)
+const dbBinding = Astro.locals?.runtime?.env?.DB;
+let notificationMessage = '';
+let notificationError = '';
+
+if (Astro.request.method === 'POST' && dbBinding) {
+  try {
+    const formData = await Astro.request.formData();
+    const action = formData.get('action');
+    const db = createDb(dbBinding);
+
+    if (action === 'create') {
+      const nama = String(formData.get('nama') || '').trim();
+      const tipe = String(formData.get('tipe') || 'tinuku') as 'tinuku' | 'konsinyasi';
+      const hargaJual = parseInt(String(formData.get('harga_jual') || '0'), 10);
+      const hargaModal = parseInt(String(formData.get('harga_modal') || '0'), 10);
+
+      if (!nama || hargaJual <= 0) {
+        notificationError = 'Nama produk dan harga jual valid wajib diisi.';
+      } else {
+        await db.insert(produk).values({
+          nama,
+          tipe,
+          harga_jual: hargaJual,
+          harga_modal: hargaModal,
+          is_active: true,
+        });
+        notificationMessage = `Produk "${nama}" berhasil ditambahkan.`;
+      }
+    } else if (action === 'toggle_status') {
+      const id = Number(formData.get('id'));
+      const [item] = await db.select().from(produk).where(eq(produk.id, id)).limit(1);
+      if (item) {
+        await db
+          .update(produk)
+          .set({ is_active: !item.is_active })
+          .where(eq(produk.id, id));
+        notificationMessage = `Status produk "${item.nama}" berhasil diubah.`;
+      }
+    } else if (action === 'delete') {
+      const id = Number(formData.get('id'));
+      await db.delete(produk).where(eq(produk.id, id));
+      notificationMessage = 'Produk berhasil dihapus.';
+    }
+  } catch (e: any) {
+    notificationError = 'Gagal memproses data produk: ' + e?.message;
+  }
+}
+
+// 3. Query Database
+let productList: Array<typeof produk.$inferSelect> = [];
+let konsinyasiList: Array<typeof konsinyasi.$inferSelect> = [];
+
+if (dbBinding) {
+  const db = createDb(dbBinding);
+  productList = await db.select().from(produk).orderBy(desc(produk.id));
+  konsinyasiList = await db.select().from(konsinyasi).orderBy(desc(konsinyasi.id));
+}
+
+const totalTinuku = productList.filter(p => p.tipe === 'tinuku').length;
+const totalTitipan = konsinyasiList.length;
+const totalSemua = productList.length + totalTitipan;
+---
+
+<Layout title="Manajemen Produk & Menu Booth - UC08">
+  <div class="min-h-screen bg-surface flex font-body-md text-on-surface">
+    
+    <!-- Sidebar Navigation -->
+    <AdminSidebar activePath="produk" userNama={userNama} />
+
+    <!-- Main Content Area -->
+    <div class="flex-1 pl-64 flex flex-col min-w-0">
+      
+      <!-- Top Sticky Bar -->
+      <header class="h-16 bg-surface-container-lowest border-b border-surface-container px-8 flex items-center justify-between sticky top-0 z-30 shadow-xs">
+        <div class="flex items-center gap-3">
+          <span class="material-symbols-outlined text-primary text-[24px]">inventory_2</span>
+          <h2 class="font-headline-sm text-base font-bold text-primary">Manajemen Master Produk & Menu Booth</h2>
+        </div>
+
+        <button
+          type="button"
+          class="h-9 px-4 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95"
+          id="btnOpenTambahProduk"
+        >
+          <span class="material-symbols-outlined text-[18px]">add</span>
+          <span>Tambah Produk Baru</span>
+        </button>
+      </header>
+
+      <!-- Main Container -->
+      <main class="flex-1 p-8 space-y-6 max-w-7xl w-full">
+
+        <!-- Flash Notifications -->
+        {notificationMessage && (
+          <div class="bg-primary-fixed/50 border border-primary/20 text-on-surface p-4 rounded-xl flex items-center gap-3 text-sm shadow-xs">
+            <span class="material-symbols-outlined text-primary text-[20px]">check_circle</span>
+            <span>{notificationMessage}</span>
+          </div>
+        )}
+        {notificationError && (
+          <div class="bg-error-container/40 border border-error/20 text-error p-4 rounded-xl flex items-center gap-3 text-sm shadow-xs">
+            <span class="material-symbols-outlined text-error text-[20px]">error</span>
+            <span>{notificationError}</span>
+          </div>
+        )}
+
+        <!-- Header Title Banner -->
+        <div>
+          <div class="flex items-center gap-2 font-label-badge text-xs text-primary font-bold uppercase tracking-wider mb-1">
+            <span>Katalog Master</span>
+            <span>&bull;</span>
+            <span class="text-secondary-gold">Harga & Stok Booth #04</span>
+          </div>
+          <h1 class="font-headline-lg text-2xl font-black text-primary tracking-tight">
+            Manajemen Produk & Menu Booth
+          </h1>
+          <p class="font-body-md text-xs sm:text-sm text-on-surface-variant mt-0.5">
+            Kelola menu jualan Tinuku Mart dan integrasi barang titipan konsinyasi mahasiswa tanpa merusak riwayat transaksi terdahulu.
+          </p>
+        </div>
+
+        <!-- Metric Counter Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="bg-surface-container-lowest p-5 rounded-2xl border border-surface-container shadow-xs flex items-center justify-between">
+            <div>
+              <span class="font-label-action text-xs font-bold text-on-surface-variant uppercase tracking-wider block">Total Katalog Terdaftar</span>
+              <span class="font-currency-display text-2xl font-extrabold text-primary mt-1 block">{totalSemua} Item</span>
+              <span class="font-body-sm text-[11px] text-on-surface-variant">Menu booth + Titipan konsinyasi</span>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-primary-fixed text-primary flex items-center justify-center">
+              <span class="material-symbols-outlined text-[24px]">store</span>
+            </div>
+          </div>
+
+          <div class="bg-surface-container-lowest p-5 rounded-2xl border border-surface-container shadow-xs flex items-center justify-between">
+            <div>
+              <span class="font-label-action text-xs font-bold text-on-surface-variant uppercase tracking-wider block">Menu Utama Tinuku</span>
+              <span class="font-currency-display text-2xl font-extrabold text-on-surface mt-1 block">{totalTinuku} Menu</span>
+              <span class="font-body-sm text-[11px] text-on-surface-variant">Dikelola internal booth Tinuku</span>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-surface-container text-on-surface flex items-center justify-center">
+              <span class="material-symbols-outlined text-[24px]">restaurant_menu</span>
+            </div>
+          </div>
+
+          <div class="bg-surface-container-lowest p-5 rounded-2xl border border-surface-container shadow-xs flex items-center justify-between">
+            <div>
+              <span class="font-label-action text-xs font-bold text-on-surface-variant uppercase tracking-wider block">Titipan Mahasiswa</span>
+              <span class="font-currency-display text-2xl font-extrabold text-secondary-gold mt-1 block">{totalTitipan} Produk</span>
+              <span class="font-body-sm text-[11px] text-on-surface-variant">Konsinyasi bagi hasil UMKM</span>
+            </div>
+            <div class="w-11 h-11 rounded-xl bg-secondary-container text-on-secondary-container flex items-center justify-center font-bold">
+              <span class="material-symbols-outlined text-[24px]">handshake</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter & Search Console -->
+        <div class="bg-surface-container-lowest p-4 rounded-2xl border border-surface-container shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div class="flex items-center gap-1.5 flex-wrap" id="tableFilterNav">
+            <button
+              type="button"
+              class="filter-tab-btn px-4 py-2 rounded-xl bg-primary text-on-primary font-bold text-xs shadow-xs transition"
+              data-filter="all"
+            >
+              Semua ({totalSemua})
+            </button>
+            <button
+              type="button"
+              class="filter-tab-btn px-4 py-2 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-semibold text-xs transition"
+              data-filter="tinuku"
+            >
+              Menu Tinuku ({totalTinuku})
+            </button>
+            <button
+              type="button"
+              class="filter-tab-btn px-4 py-2 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-semibold text-xs transition"
+              data-filter="konsinyasi"
+            >
+              Titipan Mahasiswa ({totalTitipan})
+            </button>
+          </div>
+
+          <div class="relative w-full md:w-72">
+            <span class="material-symbols-outlined absolute left-3 top-2.5 text-outline text-[18px]">search</span>
+            <input
+              type="text"
+              id="adminSearchInput"
+              placeholder="Cari nama menu / titipan..."
+              class="w-full h-10 pl-9 pr-3 bg-surface-container-low border border-outline-variant rounded-xl text-xs font-medium focus:outline-none focus:bg-surface-container-lowest focus:border-primary transition"
+            />
+          </div>
+        </div>
+
+        <!-- Data Table Container -->
+        <div class="bg-surface-container-lowest rounded-2xl border border-surface-container shadow-xs overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr class="bg-surface-container-low text-on-surface-variant text-xs uppercase font-bold tracking-wider border-b border-surface-container">
+                  <th class="py-3.5 px-4 w-12 text-center">No</th>
+                  <th class="py-3.5 px-4">Nama Produk</th>
+                  <th class="py-3.5 px-4">Tipe Kategori</th>
+                  <th class="py-3.5 px-4 text-right">Harga Pokok</th>
+                  <th class="py-3.5 px-4 text-right">Harga Jual & Margin</th>
+                  <th class="py-3.5 px-4 text-center">Status</th>
+                  <th class="py-3.5 px-4 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-surface-container" id="productRowsContainer">
+                {productList.map((p, idx) => {
+                  const marginRp = p.harga_jual - p.harga_modal;
+                  const marginPct = p.harga_modal > 0 ? Math.round((marginRp / p.harga_modal) * 100) : 0;
+                  return (
+                    <tr class="product-row hover:bg-surface-container-low/50 transition" data-tipe="tinuku" data-name={p.nama.toLowerCase()}>
+                      <td class="py-3.5 px-4 text-center font-mono text-xs text-outline">{idx + 1}</td>
+                      <td class="py-3.5 px-4 font-bold text-primary">
+                        <div class="flex items-center gap-2">
+                          <span class="material-symbols-outlined text-[18px] text-primary/70">lunch_dining</span>
+                          <span>{p.nama}</span>
+                        </div>
+                      </td>
+                      <td class="py-3.5 px-4">
+                        <span class="px-2 py-0.5 rounded-full bg-primary-fixed text-primary font-bold text-[11px]">
+                          Menu Tinuku
+                        </span>
+                      </td>
+                      <td class="py-3.5 px-4 text-right font-mono text-xs text-on-surface-variant">
+                        Rp {p.harga_modal.toLocaleString('id-ID')}
+                      </td>
+                      <td class="py-3.5 px-4 text-right font-mono">
+                        <span class="font-bold text-primary">Rp {p.harga_jual.toLocaleString('id-ID')}</span>
+                        <span class="ml-1 text-[11px] text-green-700 font-semibold bg-green-50 px-1 rounded">
+                          +{marginPct}%
+                        </span>
+                      </td>
+                      <td class="py-3.5 px-4 text-center">
+                        <span class={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                          p.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          {p.is_active ? 'Aktif' : 'Non-aktif'}
+                        </span>
+                      </td>
+                      <td class="py-3.5 px-4 text-right">
+                        <div class="flex items-center justify-end gap-1.5">
+                          <form method="POST" class="inline">
+                            <input type="hidden" name="action" value="toggle_status" />
+                            <input type="hidden" name="id" value={p.id} />
+                            <button
+                              type="submit"
+                              class="p-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant transition"
+                              title={p.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                            >
+                              <span class="material-symbols-outlined text-[16px]">
+                                {p.is_active ? 'toggle_on' : 'toggle_off'}
+                              </span>
+                            </button>
+                          </form>
+                          <form method="POST" class="inline" onsubmit="return confirm('Hapus produk ini?')">
+                            <input type="hidden" name="action" value="delete" />
+                            <input type="hidden" name="id" value={p.id} />
+                            <button
+                              type="submit"
+                              class="p-1.5 rounded-lg bg-surface-container-low hover:bg-error-container hover:text-error text-on-surface-variant transition"
+                              title="Hapus Produk"
+                            >
+                              <span class="material-symbols-outlined text-[16px]">delete</span>
+                            </button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                <!-- Titipan Konsinyasi Rows -->
+                {konsinyasiList.map((k, idx) => (
+                  <tr class="product-row hover:bg-surface-container-low/50 transition" data-tipe="konsinyasi" data-name={k.nama_produk.toLowerCase()}>
+                    <td class="py-3.5 px-4 text-center font-mono text-xs text-outline">{productList.length + idx + 1}</td>
+                    <td class="py-3.5 px-4 font-bold text-on-surface">
+                      <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-[18px] text-secondary-gold">handshake</span>
+                        <span>{k.nama_produk}</span>
+                      </div>
+                      <span class="text-[11px] text-outline font-normal">Penitip: {k.penitip}</span>
+                    </td>
+                    <td class="py-3.5 px-4">
+                      <span class="px-2 py-0.5 rounded-full bg-secondary-container text-on-secondary-container font-bold text-[11px]">
+                        Konsinyasi
+                      </span>
+                    </td>
+                    <td class="py-3.5 px-4 text-right font-mono text-xs text-on-surface-variant">
+                      Rp {k.harga_awal.toLocaleString('id-ID')}
+                    </td>
+                    <td class="py-3.5 px-4 text-right font-mono">
+                      <span class="font-bold text-primary">Rp {Math.round(k.harga_awal * 1.2).toLocaleString('id-ID')}</span>
+                      <span class="ml-1 text-[11px] text-secondary-gold font-semibold bg-amber-50 px-1 rounded">
+                        +20%
+                      </span>
+                    </td>
+                    <td class="py-3.5 px-4 text-center">
+                      <span class={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                        k.status === 'OPEN' ? 'bg-primary-fixed text-primary' : 'bg-surface-container text-outline'
+                      }`}>
+                        {k.status === 'OPEN' ? `Sisa ${k.qty_sisa}` : 'CLOSED'}
+                      </span>
+                    </td>
+                    <td class="py-3.5 px-4 text-right">
+                      <a
+                        href="/kasir/konsinyasi"
+                        class="p-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-primary inline-flex items-center justify-center"
+                        title="Buka Modul Konsinyasi"
+                      >
+                        <span class="material-symbols-outlined text-[16px]">open_in_new</span>
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </main>
+
+    </div>
+
+    <!-- Modal Tambah Produk Baru -->
+    <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs hidden flex items-center justify-center p-4" id="modalTambahProduk">
+      <div class="w-full max-w-md bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container overflow-hidden flex flex-col">
+        <div class="px-5 py-4 bg-primary text-on-primary flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-secondary-container text-[22px]">add_box</span>
+            <h3 class="font-headline-sm text-base font-bold">Tambah Produk Baru</h3>
+          </div>
+          <button type="button" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white" id="btnCloseTambahModal">
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+
+        <form method="POST" class="p-5 flex flex-col gap-3.5">
+          <input type="hidden" name="action" value="create" />
+
+          <div class="flex flex-col gap-1">
+            <label class="font-label-action text-xs font-bold text-on-surface">Nama Produk:</label>
+            <input class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg text-sm" name="nama" placeholder="Contoh: Es Kopi Susu Aren" required type="text" />
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label class="font-label-action text-xs font-bold text-on-surface">Tipe Kategori:</label>
+            <select class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg text-sm" name="tipe">
+              <option value="tinuku">Menu Asli Tinuku</option>
+              <option value="konsinyasi">Barang Titipan Mahasiswa</option>
+            </select>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="flex flex-col gap-1">
+              <label class="font-label-action text-xs font-bold text-on-surface">Harga Modal (Rp):</label>
+              <input class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg font-mono text-sm font-bold" name="harga_modal" placeholder="8000" required type="number" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="font-label-action text-xs font-bold text-primary">Harga Jual (Rp):</label>
+              <input class="h-10 px-3 bg-surface-container-low border border-primary rounded-lg font-mono text-sm font-bold text-primary" name="harga_jual" placeholder="12000" required type="number" />
+            </div>
+          </div>
+
+          <button type="submit" class="mt-2 w-full h-11 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-bold text-sm shadow-md transition flex items-center justify-center gap-1.5 active:scale-95">
+            <span class="material-symbols-outlined text-[18px]">save</span>
+            <span>Simpan Produk</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <script is:inline>
+    const modal = document.getElementById('modalTambahProduk');
+    document.getElementById('btnOpenTambahProduk')?.addEventListener('click', () => modal?.classList.remove('hidden'));
+    document.getElementById('btnCloseTambahModal')?.addEventListener('click', () => modal?.classList.add('hidden'));
+
+    // Filter Buttons
+    document.querySelectorAll('.filter-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-tab-btn').forEach(b => {
+          b.className = 'filter-tab-btn px-4 py-2 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-semibold text-xs transition';
+        });
+        btn.className = 'filter-tab-btn px-4 py-2 rounded-xl bg-primary text-on-primary font-bold text-xs shadow-xs transition';
+
+        const filter = btn.dataset.filter;
+        document.querySelectorAll('.product-row').forEach(row => {
+          if (filter === 'all' || row.dataset.tipe === filter) {
+            row.classList.remove('hidden');
+          } else {
+            row.classList.add('hidden');
+          }
+        });
+      });
+    });
+
+    // Search filter
+    document.getElementById('adminSearchInput')?.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase();
+      document.querySelectorAll('.product-row').forEach(row => {
+        const name = row.dataset.name || '';
+        if (name.includes(q)) {
+          row.classList.remove('hidden');
+        } else {
+          row.classList.add('hidden');
+        }
+      });
+    });
+  </script>
+</Layout>

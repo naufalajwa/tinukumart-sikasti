@@ -1,0 +1,1459 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import { createDb } from '@db/index';
+import { shifts, shiftPenjaga, users, produk, konsinyasi } from '@db/schema';
+import { eq, and, sql } from 'drizzle-orm';
+
+// 1. Verifikasi Session Kasir
+const userRole = Astro.cookies.get('user_role')?.value;
+const userNama = Astro.cookies.get('user_nama')?.value || 'Kasir';
+const userId = Astro.cookies.get('user_id')?.value;
+
+if (!userRole || userRole !== 'kasir' || !userId) {
+  return Astro.redirect('/?error=' + encodeURIComponent('Sesi habis atau bukan kasir. Silakan login kembali.') + '&tab=kasir');
+}
+
+// 2. Format Tanggal Hari Ini
+function getTodayDateStr(): string {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return formatter.format(new Date());
+}
+
+function formatTanggalIndonesia(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-');
+  const bulan = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ];
+  return `${parseInt(day, 10)} ${bulan[parseInt(month, 10) - 1]} ${year}`;
+}
+
+const todayDate = getTodayDateStr();
+const todayDisplay = formatTanggalIndonesia(todayDate);
+
+// 3. Database Query
+const dbBinding = Astro.locals?.runtime?.env?.DB;
+let activeShift: typeof shifts.$inferSelect | null = null;
+let allProducts: Array<{
+  id: number;
+  nama: string;
+  tipe: 'tinuku' | 'konsinyasi';
+  harga_jual: number;
+  harga_modal: number;
+  is_active: boolean;
+  stok?: number;
+  penitip?: string;
+}> = [];
+
+let cashierUsers: Array<{ id: number; nama: string }> = [];
+let consignmentItems: Array<typeof konsinyasi.$inferSelect> = [];
+
+if (dbBinding) {
+  const db = createDb(dbBinding);
+
+  // Ambil Shift Aktif Hari Ini
+  const [openShift] = await db
+    .select()
+    .from(shifts)
+    .where(and(eq(shifts.status, 'OPEN'), eq(shifts.tanggal, todayDate)))
+    .limit(1);
+
+  if (openShift) {
+    activeShift = openShift;
+  }
+
+  // Ambil Produk Tinuku yang Aktif
+  const dbProduk = await db
+    .select()
+    .from(produk)
+    .where(eq(produk.is_active, true));
+
+  // Ambil Konsinyasi Aktif Hari Ini
+  const dbKonsinyasi = await db
+    .select()
+    .from(konsinyasi)
+    .where(eq(konsinyasi.status, 'OPEN'));
+
+  consignmentItems = dbKonsinyasi;
+
+  // Gabungkan produk untuk katalog POS
+  allProducts = [
+    ...dbProduk.map((p) => ({
+      id: p.id,
+      nama: p.nama,
+      tipe: 'tinuku' as const,
+      harga_jual: p.harga_jual,
+      harga_modal: p.harga_modal,
+      is_active: p.is_active,
+      stok: 25, // default catalog stock
+    })),
+    ...dbKonsinyasi.map((k) => ({
+      id: k.id,
+      nama: `${k.nama_produk} (Titipan)`,
+      tipe: 'konsinyasi' as const,
+      harga_jual: Math.round(k.harga_awal * 1.2), // harga jual dengan margin default
+      harga_modal: k.harga_awal,
+      is_active: true,
+      stok: k.qty_sisa,
+      penitip: k.penitip,
+    })),
+  ];
+
+  // Daftar kasir untuk ganti shift estafet
+  cashierUsers = await db
+    .select({ id: users.id, nama: users.nama })
+    .from(users)
+    .where(eq(users.role, 'kasir'));
+}
+
+// Fallback jika belum ada produk di database
+if (allProducts.length === 0) {
+  allProducts = [
+    { id: 1, nama: 'Nasi Ayam Geprek Sambal Korek', tipe: 'tinuku', harga_jual: 15000, harga_modal: 10000, is_active: true, stok: 14 },
+    { id: 2, nama: 'Es Teh Kampus Jumbo', tipe: 'tinuku', harga_jual: 5000, harga_modal: 2000, is_active: true, stok: 48 },
+    { id: 3, nama: 'Risol Mayo Beef Melt (Titipan)', tipe: 'konsinyasi', harga_jual: 8000, harga_modal: 6500, is_active: true, stok: 6, penitip: 'Kak Sarah' },
+    { id: 4, nama: 'Kopi Susu Gula Aren', tipe: 'tinuku', harga_jual: 12000, harga_modal: 7000, is_active: true, stok: 22 },
+    { id: 5, nama: 'Mie Dok-Dok Special Telur', tipe: 'tinuku', harga_jual: 13000, harga_modal: 8000, is_active: true, stok: 11 },
+    { id: 6, nama: 'Keripik Kaca Pedas (Titipan)', tipe: 'konsinyasi', harga_jual: 6000, harga_modal: 4500, is_active: true, stok: 19, penitip: 'BEM FEB' },
+  ];
+}
+
+// Order ID generator
+const randomOrderNum = Math.floor(1000 + Math.random() * 9000);
+const orderCode = `TM-${randomOrderNum}`;
+---
+
+<Layout title="Point of Sale (POS) - Kasir Booth">
+  <div class="min-h-screen bg-surface font-body-md text-on-surface antialiased flex flex-col">
+
+    <!-- TOP HEADER -->
+    <header class="fixed top-0 left-0 right-0 z-40 bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.06)] border-b border-surface-container">
+      <div class="h-16 w-full px-margin-desktop flex items-center justify-between gap-space-md">
+        <!-- Brand & Booth Location -->
+        <div class="flex items-center gap-space-md shrink-0">
+          <a href="/kasir/dashboard" class="flex items-center gap-space-xs hover:opacity-90 transition-opacity">
+            <span class="material-symbols-outlined text-primary text-[28px]">storefront</span>
+            <span class="font-headline-sm text-lg font-bold text-primary">TinukuMart</span>
+          </a>
+          <div class="h-6 w-[1.5px] bg-outline-variant/60 hidden sm:block"></div>
+          <div class="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-surface-container-low rounded-lg border border-surface-container">
+            <span class="material-symbols-outlined text-primary text-[18px]">location_on</span>
+            <span class="font-label-action text-[13px] text-on-surface font-semibold">Kantin Pusat - Booth #04</span>
+          </div>
+        </div>
+
+        <!-- Real-time Clock, Cashier Status & Action Buttons -->
+        <div class="flex items-center gap-space-md">
+          <!-- Live Clock -->
+          <div class="hidden md:flex flex-col text-right pr-2">
+            <span class="font-label-numeric text-[13px] font-bold text-primary tracking-tight" id="liveClockDisplay">--:--:-- WIB</span>
+            <span class="font-body-sm text-[11px] text-on-surface-variant">{todayDisplay}</span>
+          </div>
+          <div class="h-6 w-[1px] bg-outline-variant/50 hidden md:block"></div>
+
+          <!-- Active Cashier Profile -->
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-xs shadow-xs">
+              {userNama.substring(0, 2).toUpperCase()}
+            </div>
+            <div class="hidden sm:flex flex-col text-left">
+              <span class="font-label-action text-[13px] font-bold text-primary leading-tight">{userNama}</span>
+              <span class="font-body-sm text-[11px] text-on-surface-variant font-medium">
+                {activeShift ? `Shift ${activeShift.shift_ke}` : 'Belum Buka Shift'}
+              </span>
+            </div>
+          </div>
+
+          <!-- Shift & Booth Action Buttons -->
+          <div class="flex items-center gap-2">
+            <!-- Ganti Penjaga Shift Trigger (UC05) -->
+            <button
+              type="button"
+              class="h-9 px-3 rounded-lg bg-surface-container-low hover:bg-surface-container-high border border-outline-variant text-primary flex items-center gap-1.5 font-label-action text-[12px] font-bold transition-all shadow-xs active:scale-95"
+              id="triggerEstafetShiftBtn"
+              title="Ganti Penjaga Shift (Estafet Kasir)"
+            >
+              <span class="material-symbols-outlined text-[18px]">sync_alt</span>
+              <span class="hidden sm:inline">Ganti Penjaga Shift</span>
+              <span class="sm:hidden">Shift</span>
+            </button>
+
+            <!-- Tutup Booth Trigger (UC07) -->
+            <button
+              type="button"
+              class="h-9 px-3 rounded-lg bg-error-container/40 hover:bg-error-container border border-error/30 text-error flex items-center gap-1.5 font-label-action text-[12px] font-bold transition-all active:scale-95 shadow-xs"
+              id="triggerTutupBoothBtn"
+              title="Tutup Booth & Selesaikan Shift"
+            >
+              <span class="material-symbols-outlined text-[18px]">meeting_room</span>
+              <span class="hidden sm:inline">Tutup Booth</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- QUICK ACTION KONSINYASI (TITIPAN) BAR -->
+    <section class="mt-16 w-full bg-gradient-to-r from-surface-container-low via-surface-container to-surface-container-low border-b border-surface-container px-margin-desktop py-2.5">
+      <div class="w-full flex flex-wrap items-center justify-between gap-space-sm">
+        <div class="flex items-center gap-2">
+          <span class="flex items-center justify-center w-6 h-6 rounded-full bg-secondary-container text-on-secondary-container">
+            <span class="material-symbols-outlined text-[16px]">local_convenience_store</span>
+          </span>
+          <span class="font-label-action text-[13px] font-bold text-primary">Modul Konsinyasi Mahasiswa:</span>
+          <span class="font-body-sm text-[12px] text-on-surface-variant hidden md:inline">Kelola titipan barang masuk & retur harian booth</span>
+        </div>
+        <div class="flex items-center gap-space-sm">
+          <!-- Input Titipan Pagi Button (UC03) -->
+          <button
+            type="button"
+            class="h-8 px-3 rounded-lg bg-surface-container-lowest hover:bg-primary hover:text-on-primary border border-primary text-primary flex items-center gap-1.5 font-label-action text-[12px] font-bold transition-all shadow-xs active:scale-95 group"
+            id="triggerInputTitipanBtn"
+          >
+            <span class="material-symbols-outlined text-[16px] text-primary group-hover:text-on-primary">file_download</span>
+            <span>📥 Input Titipan Pagi [F4]</span>
+          </button>
+          <!-- Retur Sisa Titipan Button (UC06) -->
+          <button
+            type="button"
+            class="h-8 px-3 rounded-lg bg-surface-container-lowest hover:bg-secondary-gold hover:text-white border border-secondary-gold text-secondary-gold flex items-center gap-1.5 font-label-action text-[12px] font-bold transition-all shadow-xs active:scale-95 group"
+            id="triggerReturTitipanBtn"
+          >
+            <span class="material-symbols-outlined text-[16px] text-secondary-gold group-hover:text-white">file_upload</span>
+            <span>📤 Retur Sisa Titipan</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- NOTIFIKASI JIKA SHIFT BELUM DIBUKA -->
+    {!activeShift && (
+      <div class="w-full bg-secondary-container text-on-secondary-container px-margin-desktop py-3 flex items-center justify-between shadow-xs">
+        <div class="flex items-center gap-2">
+          <span class="material-symbols-outlined text-[22px]">warning</span>
+          <span class="font-bold text-sm">Shift kasir hari ini belum dibuka. Silakan buka shift terlebih dahulu untuk merekam kas modal awal.</span>
+        </div>
+        <a
+          href="/kasir/dashboard"
+          class="px-4 py-1.5 rounded-lg bg-primary text-on-primary font-bold text-xs shadow-xs hover:bg-primary-dark transition"
+        >
+          Buka Shift Sekarang &rarr;
+        </a>
+      </div>
+    )}
+
+    <!-- MAIN POS DUAL-PANE CONSOLE -->
+    <main class="w-full px-margin-desktop py-space-md flex-1 pb-16">
+      <div class="flex flex-col lg:flex-row gap-space-lg items-start w-full">
+        
+        <!-- 60% LEFT COLUMN: PRODUCT CATALOG -->
+        <section class="w-full lg:w-[60%] flex flex-col gap-space-md min-w-0">
+          
+          <!-- Search & Filter Controls -->
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-space-sm bg-surface-container-lowest p-space-sm rounded-xl border border-surface-container shadow-xs">
+            <!-- Filter Pills -->
+            <div class="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0" id="categoryNav">
+              <button
+                type="button"
+                class="cat-pill px-4 py-2 rounded-lg font-label-action text-[13px] font-bold flex items-center gap-1.5 bg-primary text-on-primary shadow-xs transition-all"
+                data-cat="all"
+              >
+                <span>Semua</span>
+                <span class="px-1.5 py-0.2 rounded-full bg-white/20 text-[11px] font-label-numeric">{allProducts.length}</span>
+              </button>
+              <button
+                type="button"
+                class="cat-pill px-4 py-2 rounded-lg font-label-action text-[13px] font-semibold flex items-center gap-1.5 bg-surface-container-low hover:bg-surface-container text-on-surface-variant transition-all"
+                data-cat="tinuku"
+              >
+                <span>Menu Tinuku</span>
+                <span class="px-1.5 py-0.2 rounded-full bg-primary-fixed text-primary font-bold text-[11px] font-label-numeric">
+                  {allProducts.filter(p => p.tipe === 'tinuku').length}
+                </span>
+              </button>
+              <button
+                type="button"
+                class="cat-pill px-4 py-2 rounded-lg font-label-action text-[13px] font-semibold flex items-center gap-1.5 bg-surface-container-low hover:bg-surface-container text-on-surface-variant transition-all"
+                data-cat="konsinyasi"
+              >
+                <span>Barang Titipan</span>
+                <span class="px-1.5 py-0.2 rounded-full bg-secondary-container text-on-secondary-container font-bold text-[11px] font-label-numeric">
+                  {allProducts.filter(p => p.tipe === 'konsinyasi').length}
+                </span>
+              </button>
+            </div>
+
+            <!-- Quick Search Input -->
+            <div class="relative flex-1 sm:max-w-[240px]">
+              <span class="material-symbols-outlined absolute left-2.5 top-2 text-outline text-[18px] pointer-events-none">search</span>
+              <input
+                class="w-full h-9 pl-8 pr-3 bg-surface-container-low border border-surface-container rounded-lg text-on-surface text-[13px] placeholder:text-outline focus:outline-none focus:bg-surface-container-lowest focus:border-primary transition-all"
+                id="productSearchInput"
+                placeholder="Cari menu / scan [F2]..."
+                type="text"
+              />
+            </div>
+          </div>
+
+          <!-- Product Grid -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5" id="productGrid">
+            {allProducts.map((p) => (
+              <div
+                class="product-card group bg-surface-container-lowest rounded-xl p-3 border border-surface-container hover:border-primary/40 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between"
+                data-cat={p.tipe}
+                data-id={p.id}
+                data-tipe={p.tipe}
+                data-name={p.nama}
+                data-price={p.harga_jual}
+                data-modal={p.harga_modal}
+              >
+                <div>
+                  <div class="flex items-center justify-between gap-1 mb-2">
+                    <span class={`px-2 py-0.5 rounded-md font-label-badge text-[11px] font-bold ${
+                      p.tipe === 'tinuku'
+                        ? 'bg-primary-fixed text-primary'
+                        : 'bg-secondary-container text-on-secondary-container'
+                    }`}>
+                      {p.tipe === 'tinuku' ? 'Menu Booth' : (p.penitip ? `Titipan ${p.penitip}` : 'Titipan Mahasiswa')}
+                    </span>
+                    <span class={`font-label-numeric text-[11px] ${p.stok && p.stok <= 6 ? 'text-error font-bold' : 'text-on-surface-variant'}`}>
+                      Stok {p.stok || 10}
+                    </span>
+                  </div>
+
+                  <!-- Product Icon Thumbnail -->
+                  <div class="h-28 w-full rounded-lg bg-surface-container-low mb-2.5 overflow-hidden relative flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[48px] text-primary/40 group-hover:scale-110 transition-transform">
+                      {p.tipe === 'tinuku' ? 'lunch_dining' : 'bakery_dining'}
+                    </span>
+                    {p.tipe === 'konsinyasi' && (
+                      <span class="absolute top-1.5 right-1.5 px-1.5 py-0.5 bg-secondary-gold text-white font-label-badge text-[10px] rounded font-bold">
+                        KONSINYASI
+                      </span>
+                    )}
+                  </div>
+
+                  <h3 class="font-headline-sm text-[15px] font-bold text-primary line-clamp-1">{p.nama}</h3>
+                  <p class="font-body-sm text-[12px] text-on-surface-variant line-clamp-1">
+                    {p.tipe === 'tinuku' ? 'Menu asli booth TinukuMart' : `Titipan: ${p.penitip || 'Mahasiswa'}`}
+                  </p>
+                </div>
+
+                <div class="flex items-center justify-between mt-3 pt-2 border-t border-surface-container">
+                  <div>
+                    <span class="font-body-sm text-[10px] text-outline block leading-none">Harga</span>
+                    <span class="font-headline-sm text-[16px] font-extrabold text-primary">
+                      Rp {p.harga_jual.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    class="add-to-cart-btn h-8 px-2.5 rounded-lg bg-primary hover:bg-primary-dark text-on-primary flex items-center gap-1 font-label-action text-[12px] font-bold shadow-xs active:scale-95 transition-all"
+                  >
+                    <span class="material-symbols-outlined text-[16px]">add</span> Tambah
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <!-- 40% RIGHT COLUMN: CART & ORDER SUMMARY -->
+        <aside class="w-full lg:w-[40%] sticky top-20 flex flex-col bg-surface-container-lowest rounded-2xl shadow-md border border-surface-container overflow-hidden">
+          
+          <!-- Cart Header -->
+          <div class="p-space-md bg-surface-container-low border-b border-surface-container flex flex-col gap-2.5">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary text-[22px]">shopping_bag</span>
+                <h2 class="font-headline-sm text-[17px] font-bold text-primary">
+                  Pesanan Aktif <span class="font-label-numeric text-[13px] text-on-surface-variant" id="orderCodeDisplay">#{orderCode}</span>
+                </h2>
+              </div>
+              <button
+                type="button"
+                class="px-2 py-1 rounded text-outline hover:text-error hover:bg-error-container/40 transition-colors font-label-action text-[12px] flex items-center gap-1 font-semibold"
+                id="clearCartBtn"
+                title="Kosongkan Pesanan"
+              >
+                <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+                <span>Kosongkan</span>
+              </button>
+            </div>
+
+            <!-- Dine-in vs Takeaway Segmented Control -->
+            <div class="grid grid-cols-2 p-1 bg-surface-container rounded-lg text-xs font-bold">
+              <button
+                type="button"
+                class="dine-btn py-1.5 rounded-md font-label-action text-on-primary bg-primary shadow-xs flex items-center justify-center gap-1 transition-all"
+                id="btnDineIn"
+              >
+                <span class="material-symbols-outlined text-[16px]">restaurant</span>
+                <span>Makan di Sini</span>
+              </button>
+              <button
+                type="button"
+                class="dine-btn py-1.5 rounded-md font-label-action text-on-surface-variant hover:text-on-surface flex items-center justify-center gap-1 transition-all"
+                id="btnTakeaway"
+              >
+                <span class="material-symbols-outlined text-[16px]">takeout_dining</span>
+                <span>Bawa Pulang</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Selected Items Container (Scrollable) -->
+          <div class="p-space-md flex flex-col gap-2 max-h-[300px] overflow-y-auto divide-y divide-surface-container" id="cartItemsContainer">
+            <!-- Populated via JavaScript -->
+          </div>
+
+          <!-- Order Subtotal Details -->
+          <div class="p-space-md bg-surface-container-low/70 border-t border-surface-container flex flex-col gap-1.5">
+            <div class="flex justify-between items-center text-[13px] text-on-surface-variant">
+              <span>Subtotal (<span class="font-bold" id="cartCountBadge">0</span> item)</span>
+              <span class="font-label-numeric font-semibold text-on-surface" id="subtotalDisplay">Rp 0</span>
+            </div>
+            <div class="flex justify-between items-center text-[13px] text-primary">
+              <span class="flex items-center gap-1">
+                <span class="material-symbols-outlined text-[15px]">school</span> Diskon Mahasiswa (KTM)
+              </span>
+              <span class="font-label-numeric font-bold" id="discountDisplay">Rp 0</span>
+            </div>
+          </div>
+
+          <!-- Prominent Total Display Banner -->
+          <div class="px-space-md py-3.5 bg-primary text-on-primary flex items-center justify-between">
+            <div>
+              <span class="font-label-action text-[11px] uppercase tracking-wider text-primary-fixed block font-bold">TOTAL PEMBAYARAN</span>
+              <span class="font-body-sm text-[11px] text-on-primary-container">Harga bersih termasuk diskon</span>
+            </div>
+            <div class="text-right">
+              <span class="font-currency-display text-[26px] font-extrabold text-secondary-container tracking-tight" id="grandTotalDisplay">
+                Rp 0
+              </span>
+            </div>
+          </div>
+
+          <!-- Checkout Action Buttons -->
+          <div class="p-space-md flex flex-col gap-2.5 bg-surface-container-lowest border-t border-surface-container">
+            <!-- TUNAI Button -->
+            <button
+              type="button"
+              class="w-full h-13 py-3 rounded-xl bg-secondary-container hover:bg-yellow-400 text-on-secondary-container flex items-center justify-between px-4 shadow-sm hover:shadow-md transition-all active:scale-[0.99] font-extrabold group"
+              id="triggerPayCashBtn"
+            >
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-[24px]">payments</span>
+                <span class="font-headline-sm text-[16px] tracking-wide">💵 BAYAR TUNAI</span>
+              </div>
+              <span class="text-[12px] font-label-numeric px-2 py-0.5 rounded bg-black/10 text-on-secondary-container">[F9]</span>
+            </button>
+
+            <!-- QRIS Button -->
+            <button
+              type="button"
+              class="w-full h-13 py-3 rounded-xl bg-primary hover:bg-primary-dark text-on-primary flex items-center justify-between px-4 shadow-sm hover:shadow-md transition-all active:scale-[0.99] font-extrabold group"
+              id="triggerPayQrisBtn"
+            >
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-[24px] text-secondary-container">qr_code_scanner</span>
+                <span class="font-headline-sm text-[16px] tracking-wide">📱 BAYAR QRIS</span>
+              </div>
+              <span class="text-[12px] font-label-numeric px-2 py-0.5 rounded bg-white/20 text-on-primary">[F10]</span>
+            </button>
+
+            <!-- Secondary Bottom Actions -->
+            <div class="grid grid-cols-3 gap-2 pt-1">
+              <button
+                type="button"
+                class="py-1.5 px-2 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-action text-[12px] flex items-center justify-center gap-1 transition-colors"
+                id="btnHoldOrder"
+              >
+                <span class="material-symbols-outlined text-[15px]">pause_circle</span> Hold
+              </button>
+              <button
+                type="button"
+                class="py-1.5 px-2 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-action text-[12px] flex items-center justify-center gap-1 transition-colors"
+                id="btnPrintReceipt"
+              >
+                <span class="material-symbols-outlined text-[15px]">receipt</span> Struk
+              </button>
+              <button
+                type="button"
+                class="py-1.5 px-2 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-action text-[12px] flex items-center justify-center gap-1 transition-colors"
+                id="btnSendWa"
+              >
+                <span class="material-symbols-outlined text-[15px]">send_to_mobile</span> WA
+              </button>
+            </div>
+          </div>
+        </aside>
+
+      </div>
+    </main>
+
+    <!-- BOTTOM STATUS / HOTKEY FOOTER -->
+    <footer class="fixed bottom-0 left-0 right-0 z-30 bg-surface-container-lowest border-t border-surface-container px-margin-desktop py-2">
+      <div class="flex items-center justify-between gap-4 text-xs text-on-surface-variant">
+        <div class="flex items-center gap-4 overflow-x-auto">
+          <span class="flex items-center gap-1"><kbd class="px-1.5 py-0.5 rounded bg-surface-container font-mono text-[10px] font-bold">F2</kbd> Cari Produk</span>
+          <span class="flex items-center gap-1"><kbd class="px-1.5 py-0.5 rounded bg-surface-container font-mono text-[10px] font-bold">F4</kbd> Input Titipan</span>
+          <span class="flex items-center gap-1"><kbd class="px-1.5 py-0.5 rounded bg-secondary-container text-on-secondary-container font-mono text-[10px] font-bold">F9</kbd> Tunai</span>
+          <span class="flex items-center gap-1"><kbd class="px-1.5 py-0.5 rounded bg-primary text-white font-mono text-[10px] font-bold">F10</kbd> QRIS</span>
+          <span class="flex items-center gap-1"><kbd class="px-1.5 py-0.5 rounded bg-surface-container font-mono text-[10px] font-bold">ESC</kbd> Tutup / Batal</span>
+        </div>
+        <div class="hidden sm:flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+          <span class="font-medium text-[11px]">TinukuMart POS Engine v2.4 • Online</span>
+        </div>
+      </div>
+    </footer>
+
+    <!-- ======================================================== -->
+    <!-- MODAL 1: ESTAFET SHIFT (GANTI PENJAGA - UC05)             -->
+    <!-- ======================================================== -->
+    <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs hidden flex items-center justify-center p-4" id="modalEstafetShift">
+      <div class="w-full max-w-lg bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+        <div class="px-5 py-4 bg-primary text-on-primary flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="material-symbols-outlined text-secondary-container text-[24px]">sync_alt</span>
+            <div>
+              <h3 class="font-headline-sm text-[17px] font-bold">Estafet Shift (Ganti Penjaga)</h3>
+              <p class="font-body-sm text-[11px] text-primary-fixed">Serah terima kas & penugasan giliran booth</p>
+            </div>
+          </div>
+          <button type="button" class="close-modal-btn w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors" data-target="modalEstafetShift">
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+
+        <div class="p-5 flex flex-col gap-4 max-h-[75vh] overflow-y-auto">
+          <!-- Accountability Cash Box -->
+          <div class="p-3.5 bg-primary-fixed/30 border border-primary/20 rounded-xl flex items-center justify-between">
+            <div>
+              <span class="font-body-sm text-[11px] text-on-surface-variant block font-medium">Akuntabilitas Kas Masuk:</span>
+              <span class="font-headline-sm text-[15px] font-bold text-primary">Total Kas Seharusnya:</span>
+            </div>
+            <span class="font-currency-display text-[20px] font-extrabold text-primary" id="systemCashExpected">
+              Rp {((activeShift?.modal_awal || 100000) + 50000).toLocaleString('id-ID')}
+            </span>
+          </div>
+
+          <!-- Physical Cash Input -->
+          <div class="flex flex-col gap-1.5">
+            <label class="font-label-action text-[13px] font-bold text-on-surface">Total Uang Fisik Aktual (Cash Reconciliation):</label>
+            <div class="relative">
+              <span class="absolute left-3.5 top-2.5 font-bold text-primary text-[15px]">Rp</span>
+              <input
+                class="w-full h-11 pl-12 pr-4 bg-surface-container-low border border-outline-variant rounded-xl font-label-numeric text-[16px] font-bold text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                id="physicalCashInput"
+                type="number"
+                value={activeShift?.modal_awal || 100000}
+              />
+            </div>
+            <div class="p-2.5 rounded-lg bg-primary-fixed/40 border border-primary/20 text-primary text-[12px] font-semibold flex items-center justify-between" id="cashDiffBanner">
+              <span>Status Kas:</span>
+              <span class="font-bold" id="cashDiffText">Selisih: Rp 0 (Seimbang / Sesuai)</span>
+            </div>
+          </div>
+
+          <!-- Student Next Crew Selector -->
+          <div class="flex flex-col gap-2">
+            <label class="font-label-action text-[13px] font-bold text-on-surface">Pilih Kasir Pengganti Shift Berikutnya:</label>
+            <div class="space-y-2 bg-surface-container-low/60 p-3 rounded-xl border border-surface-container max-h-48 overflow-y-auto">
+              {cashierUsers.map((c, idx) => (
+                <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-container-lowest transition-colors cursor-pointer">
+                  <input
+                    type="radio"
+                    name="shiftNextCrew"
+                    value={c.id}
+                    checked={idx === 0}
+                    class="w-4 h-4 text-primary focus:ring-primary"
+                  />
+                  <div class="flex-1">
+                    <span class="font-body-md text-[13px] font-bold text-on-surface block">{c.nama}</span>
+                    <span class="font-body-sm text-[11px] text-on-surface-variant">Petugas Kasir #{c.id}</span>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="w-full h-12 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-label-action text-[14px] font-bold shadow-md transition-all flex items-center justify-center gap-2 active:scale-95"
+            id="btnSubmitShiftHandover"
+          >
+            <span class="material-symbols-outlined text-[20px]">how_to_reg</span>
+            <span>Simpan & Mulai Shift Baru</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- MODAL 2: INPUT TITIPAN PAGI (UC03)                       -->
+    <!-- ======================================================== -->
+    <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs hidden flex items-center justify-center p-4" id="modalInputTitipan">
+      <div class="w-full max-w-lg bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+        <div class="px-5 py-4 bg-primary text-on-primary flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="material-symbols-outlined text-secondary-container text-[24px]">post_add</span>
+            <div>
+              <h3 class="font-headline-sm text-[17px] font-bold">Input Titipan Pagi (Konsinyasi)</h3>
+              <p class="font-body-sm text-[11px] text-primary-fixed">Pencatatan produk UMKM / jualan mahasiswa masuk</p>
+            </div>
+          </div>
+          <button type="button" class="close-modal-btn w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors" data-target="modalInputTitipan">
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+
+        <form class="p-5 flex flex-col gap-3.5 max-h-[75vh] overflow-y-auto" id="formInputTitipan">
+          <div class="flex flex-col gap-1">
+            <label class="font-label-action text-[12px] font-bold text-on-surface">Nama Produk Titipan:</label>
+            <input
+              class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg text-on-surface text-[13px] focus:outline-none focus:border-primary"
+              id="titipanNamaProduk"
+              placeholder="Contoh: Risol Mayo Lumer Spesial"
+              required
+              type="text"
+            />
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label class="font-label-action text-[12px] font-bold text-on-surface">Jumlah Titipan (Pcs / Porsi):</label>
+            <div class="relative">
+              <input
+                class="h-10 w-full pl-3 pr-12 bg-surface-container-low border border-outline-variant rounded-lg text-on-surface font-label-numeric text-[14px] font-bold focus:outline-none focus:border-primary"
+                id="titipanQty"
+                min="1"
+                placeholder="20"
+                required
+                type="number"
+                value="20"
+              />
+              <span class="absolute right-3 top-2.5 text-xs text-outline font-semibold">pcs</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="flex flex-col gap-1">
+              <label class="font-label-action text-[12px] font-bold text-on-surface">Harga Pokok / Setor:</label>
+              <div class="relative">
+                <span class="absolute left-2.5 top-2.5 text-xs text-outline font-bold">Rp</span>
+                <input
+                  class="h-10 w-full pl-8 pr-2 bg-surface-container-low border border-outline-variant rounded-lg text-on-surface font-label-numeric text-[13px] font-bold focus:outline-none focus:border-primary"
+                  id="titipanHargaPokok"
+                  placeholder="2500"
+                  required
+                  type="number"
+                  value="2500"
+                />
+              </div>
+              <span class="text-[10px] text-outline">Hak pemilik titipan</span>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="font-label-action text-[12px] font-bold text-primary">Harga Jual Konsumen:</label>
+              <div class="relative">
+                <span class="absolute left-2.5 top-2.5 text-xs text-primary font-bold">Rp</span>
+                <input
+                  class="h-10 w-full pl-8 pr-2 bg-surface-container-low border border-primary rounded-lg text-primary font-label-numeric text-[13px] font-bold focus:outline-none focus:border-primary"
+                  id="titipanHargaJual"
+                  placeholder="3000"
+                  required
+                  type="number"
+                  value="3000"
+                />
+              </div>
+              <span class="text-[10px] text-primary font-semibold">Margin booth otomatis dihitung</span>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <label class="font-label-action text-[12px] font-bold text-on-surface">Nama Penitip / Kontak Mahasiswa:</label>
+            <input
+              class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg text-on-surface text-[13px] focus:outline-none focus:border-primary"
+              id="titipanPenitip"
+              placeholder="Contoh: Sarah Aulia (0812-3456-7890 / FEB)"
+              required
+              type="text"
+            />
+          </div>
+
+          <button
+            type="submit"
+            class="mt-2 w-full h-11 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-label-action text-[13px] font-bold shadow-md transition-all flex items-center justify-center gap-1.5 active:scale-95"
+          >
+            <span class="material-symbols-outlined text-[18px]">save</span>
+            <span>Simpan Data Titipan Masuk</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- MODAL 3: PEMBAYARAN TUNAI (KEMBALIAN - UC04)             -->
+    <!-- ======================================================== -->
+    <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs hidden flex items-center justify-center p-4" id="modalPembayaranTunai">
+      <div class="w-full max-w-md bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+        <div class="px-5 py-4 bg-primary text-on-primary flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="material-symbols-outlined text-secondary-container text-[24px]">point_of_sale</span>
+            <div>
+              <h3 class="font-headline-sm text-[17px] font-bold">Pembayaran Tunai - POS Kasir</h3>
+              <p class="font-body-sm text-[11px] text-primary-fixed">Kalkulator otomatis hitung kembalian</p>
+            </div>
+          </div>
+          <button type="button" class="close-modal-btn w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors" data-target="modalPembayaranTunai">
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+
+        <div class="p-5 flex flex-col gap-4">
+          <!-- Total Tagihan Display -->
+          <div class="text-center py-3.5 px-4 bg-surface-container-low rounded-xl border border-surface-container">
+            <span class="font-body-sm text-[11px] text-outline uppercase tracking-wider block font-bold">Total Tagihan Pesanan:</span>
+            <span class="font-currency-display text-[28px] font-extrabold text-primary" id="cashModalBillAmount">Rp 0</span>
+          </div>
+
+          <!-- Quick Cash Chips -->
+          <div class="flex flex-col gap-1.5">
+            <span class="font-label-action text-[12px] font-semibold text-on-surface-variant">Pilihan Cepat Nominal Uang:</span>
+            <div class="grid grid-cols-3 gap-2" id="quickCashButtonsContainer">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+
+          <!-- Input Uang Pembeli -->
+          <div class="flex flex-col gap-1.5">
+            <label class="font-label-action text-[13px] font-bold text-on-surface">Nominal Uang Pembeli:</label>
+            <div class="relative">
+              <span class="absolute left-3.5 top-2.5 font-bold text-outline text-[16px]">Rp</span>
+              <input
+                class="w-full h-12 pl-12 pr-4 bg-surface-container-low border border-outline-variant rounded-xl font-label-numeric text-[20px] font-bold text-on-surface focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary"
+                id="inputUangPembeli"
+                type="number"
+                value="0"
+              />
+            </div>
+          </div>
+
+          <!-- Kembalian Display -->
+          <div class="p-3.5 rounded-xl bg-primary/5 border border-primary/20 flex items-center justify-between">
+            <div>
+              <span class="font-body-sm text-[12px] text-on-surface-variant block">Uang Kembalian:</span>
+              <span class="font-label-badge text-[10px] text-primary bg-primary-fixed px-2 py-0.5 rounded font-bold uppercase" id="cashChangeBadgeStatus">Kembalian Cukup</span>
+            </div>
+            <span class="font-currency-display text-[26px] font-extrabold text-primary" id="cashChangeDisplay">Rp 0</span>
+          </div>
+
+          <!-- Submit Button -->
+          <button
+            type="button"
+            class="w-full h-12 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-label-action text-[14px] font-extrabold shadow-md transition-all flex items-center justify-center gap-2 active:scale-95"
+            id="btnCompleteCashTransaction"
+          >
+            <span class="material-symbols-outlined text-[20px] text-secondary-container">check_circle</span>
+            <span>Selesaikan Transaksi & Cetak Struk</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- MODAL 4: PEMBAYARAN QRIS (UC04)                          -->
+    <!-- ======================================================== -->
+    <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs hidden flex items-center justify-center p-4" id="modalPembayaranQris">
+      <div class="w-full max-w-sm bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+        <div class="px-5 py-4 bg-primary text-on-primary flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="material-symbols-outlined text-secondary-container text-[24px]">qr_code_2</span>
+            <div>
+              <h3 class="font-headline-sm text-[16px] font-bold">Pembayaran QRIS Booth</h3>
+              <p class="font-body-sm text-[11px] text-primary-fixed">NMID: ID1020334819491</p>
+            </div>
+          </div>
+          <button type="button" class="close-modal-btn w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors" data-target="modalPembayaranQris">
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+        <div class="p-5 flex flex-col items-center gap-3 text-center">
+          <div class="text-xs text-on-surface-variant font-medium">Scan QRIS Dinamis via GoPay / BCA / ShopeePay / OVO / Dana:</div>
+          <div class="w-52 h-52 bg-white p-3 rounded-2xl border-2 border-dashed border-primary/30 flex flex-col items-center justify-center shadow-inner">
+            <span class="material-symbols-outlined text-[110px] text-primary">qr_code_2</span>
+            <span class="text-[11px] font-bold text-primary font-mono -mt-2">TinukuMart Kantin Pusat</span>
+          </div>
+          <div class="text-center">
+            <span class="font-body-sm text-[11px] text-outline block">Total Tagihan:</span>
+            <span class="font-headline-md text-[22px] font-extrabold text-primary" id="qrisModalBillAmount">Rp 0</span>
+          </div>
+          <button
+            type="button"
+            class="w-full h-11 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-label-action text-[13px] font-bold shadow-md transition-all flex items-center justify-center gap-2 active:scale-95"
+            id="btnCompleteQrisTransaction"
+          >
+            <span class="material-symbols-outlined text-[18px]">done_all</span> Verifikasi Berhasil & Simpan
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- MODAL 5: RETUR SISA TITIPAN (UC06)                       -->
+    <!-- ======================================================== -->
+    <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs hidden flex items-center justify-center p-4" id="modalReturTitipan">
+      <div class="w-full max-w-lg bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+        <div class="px-5 py-4 bg-secondary-gold text-white flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="material-symbols-outlined text-[24px]">assignment_return</span>
+            <div>
+              <h3 class="font-headline-sm text-[17px] font-bold">Retur Sisa Titipan & Rekonsiliasi</h3>
+              <p class="font-body-sm text-[11px] text-white/80">Input sisa fisik barang sore hari & hitung hak penitip</p>
+            </div>
+          </div>
+          <button type="button" class="close-modal-btn w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors" data-target="modalReturTitipan">
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+
+        <div class="p-5 flex flex-col gap-4 max-h-[75vh] overflow-y-auto">
+          {consignmentItems.length === 0 ? (
+            <div class="py-8 text-center text-outline">
+              <span class="material-symbols-outlined text-[40px] opacity-40">inventory_2</span>
+              <p class="font-body-md text-sm mt-1">Belum ada barang titipan aktif hari ini.</p>
+            </div>
+          ) : (
+            <div class="space-y-3">
+              {consignmentItems.map((item) => (
+                <div class="p-3 bg-surface-container-low rounded-xl border border-surface-container flex items-center justify-between gap-3">
+                  <div class="flex-1 min-w-0">
+                    <span class="font-body-md text-[13px] font-bold text-on-surface block truncate">{item.nama_produk}</span>
+                    <span class="font-body-sm text-[11px] text-on-surface-variant">
+                      Penitip: {item.penitip} &bull; Masuk: {item.qty_masuk} pcs &bull; Harga: Rp {item.harga_awal.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-2 shrink-0">
+                    <input
+                      type="number"
+                      min="0"
+                      max={item.qty_masuk}
+                      value={item.qty_sisa}
+                      class="retur-sisa-input w-16 h-8 text-center bg-surface-container-lowest border border-outline-variant rounded-lg text-xs font-bold"
+                      data-id={item.id}
+                      placeholder="Sisa"
+                    />
+                    <button
+                      type="button"
+                      class="btn-process-retur h-8 px-2.5 rounded-lg bg-secondary-gold text-white font-bold text-xs hover:opacity-90 active:scale-95 transition"
+                      data-id={item.id}
+                    >
+                      Proses
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- MODAL 6: TUTUP BOOTH (CLOSING SHIFT - UC07)              -->
+    <!-- ======================================================== -->
+    <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs hidden flex items-center justify-center p-4" id="modalTutupBooth">
+      <div class="w-full max-w-md bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200">
+        <div class="px-5 py-4 bg-error text-white flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <span class="material-symbols-outlined text-[24px]">meeting_room</span>
+            <div>
+              <h3 class="font-headline-sm text-[17px] font-bold">Tutup Booth & Akhiri Shift</h3>
+              <p class="font-body-sm text-[11px] text-white/80">Rekonsiliasi akhir kas fisik di laci</p>
+            </div>
+          </div>
+          <button type="button" class="close-modal-btn w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors" data-target="modalTutupBooth">
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        </div>
+
+        <div class="p-5 flex flex-col gap-4">
+          <div class="p-3 bg-surface-container-low rounded-xl border border-surface-container">
+            <span class="font-body-sm text-[11px] text-outline block">Modal Awal + Estimasi Tunai:</span>
+            <span class="font-headline-sm text-[18px] font-extrabold text-primary" id="closingExpectedCashDisplay">
+              Rp {((activeShift?.modal_awal || 100000) + 150000).toLocaleString('id-ID')}
+            </span>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <label class="font-label-action text-[13px] font-bold text-on-surface">Uang Fisik Aktual di Laci Kasir:</label>
+            <div class="relative">
+              <span class="absolute left-3.5 top-2.5 font-bold text-outline text-[16px]">Rp</span>
+              <input
+                class="w-full h-11 pl-12 pr-4 bg-surface-container-low border border-outline-variant rounded-xl font-label-numeric text-[18px] font-bold text-on-surface focus:outline-none focus:border-primary"
+                id="closingPhysicalCashInput"
+                type="number"
+                value={activeShift?.modal_awal || 100000}
+              />
+            </div>
+          </div>
+
+          <div class="p-2.5 rounded-lg bg-surface-container border border-surface-container text-[12px] font-semibold text-on-surface" id="closingDiffDisplay">
+            Selisih Kas: Rp 0
+          </div>
+
+          <button
+            type="button"
+            class="w-full h-12 rounded-xl bg-error hover:bg-red-700 text-white font-label-action text-[14px] font-bold shadow-md transition-all flex items-center justify-center gap-2 active:scale-95"
+            id="btnConfirmTutupShift"
+          >
+            <span class="material-symbols-outlined text-[20px]">lock</span>
+            <span>Tutup Booth & Selesaikan Shift</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION CONTAINER -->
+    <div class="fixed bottom-14 right-6 z-50 bg-primary-dark text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2.5 opacity-0 pointer-events-none transition-all duration-300" id="toastNotification">
+      <span class="material-symbols-outlined text-secondary-container text-[20px]" id="toastIcon">info</span>
+      <span class="font-body-md text-sm font-semibold" id="toastMsg">Notifikasi</span>
+    </div>
+
+  </div>
+
+  <!-- CLIENT-SIDE POS CONTROLLER ENGINE -->
+  <script is:inline define:vars={{ activeShiftId: activeShift?.id || 1 }}>
+    (() => {
+      // 1. STATE KERANJANG
+      let cart = [
+        { id: 1, name: 'Nasi Ayam Geprek Sambal Korek', price: 15000, modal: 10000, tipe: 'tinuku', qty: 2 },
+        { id: 2, name: 'Es Teh Kampus Jumbo', price: 5000, modal: 2000, tipe: 'tinuku', qty: 2 },
+        { id: 3, name: 'Risol Mayo Beef Melt (Titipan)', price: 8000, modal: 6500, tipe: 'konsinyasi', qty: 3 }
+      ];
+
+      const discountAmount = 4000; // Diskon KTM Mahasiswa jika subtotal >= 30.000
+
+      // DOM Elements
+      const cartContainer = document.getElementById('cartItemsContainer');
+      const subtotalDisplay = document.getElementById('subtotalDisplay');
+      const discountDisplay = document.getElementById('discountDisplay');
+      const grandTotalDisplay = document.getElementById('grandTotalDisplay');
+      const cartCountBadge = document.getElementById('cartCountBadge');
+      const toast = document.getElementById('toastNotification');
+      const toastMsg = document.getElementById('toastMsg');
+
+      // Modals
+      const modalEstafet = document.getElementById('modalEstafetShift');
+      const modalInputTitipan = document.getElementById('modalInputTitipan');
+      const modalPembayaranTunai = document.getElementById('modalPembayaranTunai');
+      const modalPembayaranQris = document.getElementById('modalPembayaranQris');
+      const modalReturTitipan = document.getElementById('modalReturTitipan');
+      const modalTutupBooth = document.getElementById('modalTutupBooth');
+
+      // Helper Format Rupiah
+      const formatRp = (num) => 'Rp ' + Number(num || 0).toLocaleString('id-ID');
+
+      // Toast Notification
+      const showToast = (message, icon = 'info') => {
+        if (!toast || !toastMsg) return;
+        toastMsg.textContent = message;
+        const iconEl = document.getElementById('toastIcon');
+        if (iconEl) iconEl.textContent = icon;
+        toast.classList.remove('opacity-0', 'pointer-events-none');
+        toast.classList.add('opacity-100');
+        setTimeout(() => {
+          toast.classList.add('opacity-0', 'pointer-events-none');
+          toast.classList.remove('opacity-100');
+        }, 2500);
+      };
+
+      // Modal Open/Close Helpers
+      const openModal = (el) => el && el.classList.remove('hidden');
+      const closeModal = (el) => el && el.classList.add('hidden');
+
+      document.querySelectorAll('.close-modal-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const targetId = btn.dataset.target;
+          closeModal(document.getElementById(targetId));
+        });
+      });
+
+      [modalEstafet, modalInputTitipan, modalPembayaranTunai, modalPembayaranQris, modalReturTitipan, modalTutupBooth].forEach(m => {
+        if (m) {
+          m.addEventListener('click', (e) => {
+            if (e.target === m) closeModal(m);
+          });
+        }
+      });
+
+      // Live Clock
+      const updateClock = () => {
+        const now = new Date();
+        const hrs = String(now.getHours()).padStart(2, '0');
+        const mins = String(now.getMinutes()).padStart(2, '0');
+        const secs = String(now.getSeconds()).padStart(2, '0');
+        const el = document.getElementById('liveClockDisplay');
+        if (el) el.textContent = `${hrs}:${mins}:${secs} WIB`;
+      };
+      setInterval(updateClock, 1000);
+      updateClock();
+
+      // Hitung Total Keranjang
+      const getCartTotals = () => {
+        const subtotal = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
+        const activeDiscount = subtotal >= 30000 ? discountAmount : 0;
+        const grandTotal = Math.max(0, subtotal - activeDiscount);
+        return { subtotal, activeDiscount, grandTotal };
+      };
+
+      // Render Cart
+      const renderCart = () => {
+        if (!cartContainer) return;
+        cartContainer.innerHTML = '';
+        let totalQty = 0;
+        const { subtotal, activeDiscount, grandTotal } = getCartTotals();
+
+        if (cart.length === 0) {
+          cartContainer.innerHTML = `
+            <div class="py-10 flex flex-col items-center justify-center text-center text-outline">
+              <span class="material-symbols-outlined text-[44px] mb-1 opacity-40">remove_shopping_cart</span>
+              <p class="font-body-md text-[13px] font-bold text-on-surface">Keranjang Masih Kosong</p>
+              <p class="font-body-sm text-[11px] text-on-surface-variant">Klik item katalog di sebelah kiri untuk menambah pesanan.</p>
+            </div>
+          `;
+        } else {
+          cart.forEach(item => {
+            totalQty += item.qty;
+            const lineTotal = item.price * item.qty;
+
+            const row = document.createElement('div');
+            row.className = 'pt-2.5 pb-2.5 flex items-center justify-between gap-2';
+            row.dataset.id = String(item.id);
+            row.innerHTML = `
+              <div class="flex-1 min-w-0 pr-1">
+                <h4 class="font-body-lg text-[13px] font-bold text-primary truncate leading-tight">${item.name}</h4>
+                <span class="font-label-numeric text-[11px] text-on-surface-variant">@ ${formatRp(item.price)}</span>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <div class="flex items-center bg-surface-container-low border border-surface-container rounded-lg p-0.5">
+                  <button type="button" class="qty-btn-minus w-7 h-7 rounded bg-surface-container-lowest hover:bg-surface-container text-on-surface font-bold text-xs flex items-center justify-center transition-colors">-</button>
+                  <span class="qty-val font-label-numeric text-[12px] font-bold px-2 text-center text-on-surface">${item.qty}</span>
+                  <button type="button" class="qty-btn-plus w-7 h-7 rounded bg-surface-container-lowest hover:bg-surface-container text-on-surface font-bold text-xs flex items-center justify-center transition-colors">+</button>
+                </div>
+                <span class="font-label-numeric text-[12px] text-primary font-bold min-w-[70px] text-right">${formatRp(lineTotal)}</span>
+                <button type="button" class="delete-item-btn w-7 h-7 text-outline hover:text-error hover:bg-error-container/40 rounded flex items-center justify-center transition-colors">
+                  <span class="material-symbols-outlined text-[16px]">delete</span>
+                </button>
+              </div>
+            `;
+            cartContainer.appendChild(row);
+          });
+        }
+
+        if (cartCountBadge) cartCountBadge.textContent = String(totalQty);
+        if (subtotalDisplay) subtotalDisplay.textContent = formatRp(subtotal);
+        if (discountDisplay) discountDisplay.textContent = activeDiscount > 0 ? `-${formatRp(activeDiscount)}` : 'Rp 0';
+        if (grandTotalDisplay) grandTotalDisplay.textContent = formatRp(grandTotal);
+      };
+
+      // Event Listener: Tambah ke Keranjang
+      document.querySelectorAll('.product-card').forEach(card => {
+        card.addEventListener('click', (e) => {
+          const id = Number(card.dataset.id);
+          const name = card.dataset.name || 'Produk';
+          const price = Number(card.dataset.price || 0);
+          const modal = Number(card.dataset.modal || 0);
+          const tipe = card.dataset.tipe || 'tinuku';
+
+          const existing = cart.find(i => i.id === id);
+          if (existing) {
+            existing.qty += 1;
+          } else {
+            cart.push({ id, name, price, modal, tipe, qty: 1 });
+          }
+          renderCart();
+          showToast(`+1 ${name} ditambahkan`, 'check_circle');
+        });
+      });
+
+      // Event Listener: +/- & Hapus dari Keranjang
+      cartContainer?.addEventListener('click', (e) => {
+        const target = e.target;
+        const row = target.closest('[data-id]');
+        if (!row) return;
+        const id = Number(row.dataset.id);
+        const item = cart.find(i => i.id === id);
+        if (!item) return;
+
+        if (target.closest('.qty-btn-minus')) {
+          if (item.qty > 1) {
+            item.qty -= 1;
+          } else {
+            cart = cart.filter(i => i.id !== id);
+          }
+          renderCart();
+        } else if (target.closest('.qty-btn-plus')) {
+          item.qty += 1;
+          renderCart();
+        } else if (target.closest('.delete-item-btn')) {
+          cart = cart.filter(i => i.id !== id);
+          renderCart();
+          showToast(`${item.name} dihapus dari pesanan`, 'delete');
+        }
+      });
+
+      // Kosongkan Keranjang
+      document.getElementById('clearCartBtn')?.addEventListener('click', () => {
+        if (cart.length > 0) {
+          cart = [];
+          renderCart();
+          showToast('Keranjang pesanan dikosongkan', 'delete_sweep');
+        }
+      });
+
+      // Dine Option Buttons
+      const btnDineIn = document.getElementById('btnDineIn');
+      const btnTakeaway = document.getElementById('btnTakeaway');
+      btnDineIn?.addEventListener('click', () => {
+        btnDineIn.className = 'dine-btn py-1.5 rounded-md font-label-action text-on-primary bg-primary shadow-xs flex items-center justify-center gap-1 transition-all';
+        btnTakeaway.className = 'dine-btn py-1.5 rounded-md font-label-action text-on-surface-variant hover:text-on-surface flex items-center justify-center gap-1 transition-all';
+        showToast('Pesanan diset: Makan di Sini');
+      });
+      btnTakeaway?.addEventListener('click', () => {
+        btnTakeaway.className = 'dine-btn py-1.5 rounded-md font-label-action text-on-primary bg-primary shadow-xs flex items-center justify-center gap-1 transition-all';
+        btnDineIn.className = 'dine-btn py-1.5 rounded-md font-label-action text-on-surface-variant hover:text-on-surface flex items-center justify-center gap-1 transition-all';
+        showToast('Pesanan diset: Bawa Pulang');
+      });
+
+      // Category Filter Pills
+      document.querySelectorAll('.cat-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+          document.querySelectorAll('.cat-pill').forEach(p => {
+            p.className = 'cat-pill px-4 py-2 rounded-lg font-label-action text-[13px] font-semibold flex items-center gap-1.5 bg-surface-container-low hover:bg-surface-container text-on-surface-variant transition-all';
+          });
+          pill.className = 'cat-pill px-4 py-2 rounded-lg font-label-action text-[13px] font-bold flex items-center gap-1.5 bg-primary text-on-primary shadow-xs transition-all';
+
+          const cat = pill.dataset.cat;
+          document.querySelectorAll('.product-card').forEach(card => {
+            if (cat === 'all' || card.dataset.cat === cat) {
+              card.classList.remove('hidden');
+            } else {
+              card.classList.add('hidden');
+            }
+          });
+        });
+      });
+
+      // Search Bar Filter
+      const searchInput = document.getElementById('productSearchInput');
+      searchInput?.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        document.querySelectorAll('.product-card').forEach(card => {
+          const name = (card.dataset.name || '').toLowerCase();
+          if (name.includes(query)) {
+            card.classList.remove('hidden');
+          } else {
+            card.classList.add('hidden');
+          }
+        });
+      });
+
+      // Quick Cash Calculations
+      const updateCashModal = () => {
+        const { grandTotal } = getCartTotals();
+        const billAmountEl = document.getElementById('cashModalBillAmount');
+        if (billAmountEl) billAmountEl.textContent = formatRp(grandTotal);
+
+        const container = document.getElementById('quickCashButtonsContainer');
+        if (container) {
+          const pas = grandTotal;
+          const roundedUp = Math.ceil(grandTotal / 10000) * 10000;
+          const bigCash = roundedUp < 50000 ? 50000 : 100000;
+
+          const options = Array.from(new Set([pas, roundedUp, bigCash])).slice(0, 3);
+          container.innerHTML = options.map(amt => `
+            <button type="button" class="quick-cash-chip py-2 px-1 rounded-lg bg-surface-container hover:bg-secondary-container hover:text-on-secondary-container font-label-numeric text-[13px] font-bold text-on-surface transition-all" data-cash="${amt}">
+              ${amt === pas ? `${formatRp(amt)} (Pas)` : formatRp(amt)}
+            </button>
+          `).join('');
+
+          container.querySelectorAll('.quick-cash-chip').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const cashInput = document.getElementById('inputUangPembeli');
+              if (cashInput) {
+                cashInput.value = btn.dataset.cash;
+                calcChange();
+              }
+            });
+          });
+        }
+
+        const input = document.getElementById('inputUangPembeli');
+        if (input) {
+          input.value = String(grandTotal);
+          calcChange();
+        }
+      };
+
+      const calcChange = () => {
+        const { grandTotal } = getCartTotals();
+        const input = document.getElementById('inputUangPembeli');
+        const changeDisplay = document.getElementById('cashChangeDisplay');
+        const badge = document.getElementById('cashChangeBadgeStatus');
+
+        const given = Number(input?.value || 0);
+        const change = given - grandTotal;
+
+        if (changeDisplay) changeDisplay.textContent = formatRp(Math.max(0, change));
+        if (badge) {
+          if (change < 0) {
+            badge.textContent = 'Uang Kurang ' + formatRp(Math.abs(change));
+            badge.className = 'font-label-badge text-[10px] text-error bg-error-container px-2 py-0.5 rounded font-bold uppercase';
+          } else {
+            badge.textContent = change === 0 ? 'Uang Pas' : 'Kembalian Cukup';
+            badge.className = 'font-label-badge text-[10px] text-primary bg-primary-fixed px-2 py-0.5 rounded font-bold uppercase';
+          }
+        }
+      };
+
+      document.getElementById('inputUangPembeli')?.addEventListener('input', calcChange);
+
+      // Trigger Tunai Modal [F9]
+      const triggerCash = () => {
+        const { grandTotal } = getCartTotals();
+        if (grandTotal <= 0) {
+          showToast('Keranjang masih kosong!', 'error');
+          return;
+        }
+        updateCashModal();
+        openModal(modalPembayaranTunai);
+      };
+      document.getElementById('triggerPayCashBtn')?.addEventListener('click', triggerCash);
+
+      // Trigger QRIS Modal [F10]
+      const triggerQris = () => {
+        const { grandTotal } = getCartTotals();
+        if (grandTotal <= 0) {
+          showToast('Keranjang masih kosong!', 'error');
+          return;
+        }
+        const billEl = document.getElementById('qrisModalBillAmount');
+        if (billEl) billEl.textContent = formatRp(grandTotal);
+        openModal(modalPembayaranQris);
+      };
+      document.getElementById('triggerPayQrisBtn')?.addEventListener('click', triggerQris);
+
+      // PROSES CHECKOUT TRANSAKSI (SIMPAN KE DB)
+      const submitCheckout = async (metode, cashDiterima = 0) => {
+        const { grandTotal } = getCartTotals();
+        const payload = {
+          shift_id: activeShiftId,
+          metode,
+          total: grandTotal,
+          cash_diterima: metode === 'TUNAI' ? cashDiterima : null,
+          kembalian: metode === 'TUNAI' ? Math.max(0, cashDiterima - grandTotal) : null,
+          items: cart.map(i => ({
+            item_ref_id: i.id,
+            tipe_item: i.tipe,
+            nama_snapshot: i.name,
+            harga_satuan_snapshot: i.price,
+            harga_modal_snapshot: i.modal || 0,
+            qty: i.qty,
+            subtotal: i.price * i.qty,
+          }))
+        };
+
+        try {
+          const res = await fetch('/api/transaksi', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            closeModal(modalPembayaranTunai);
+            closeModal(modalPembayaranQris);
+            showToast(`Transaksi #${data.transactionId} Sukses (${metode})! Struk tercetak.`, 'check_circle');
+            cart = [];
+            renderCart();
+            // Refresh order number
+            const codeEl = document.getElementById('orderCodeDisplay');
+            if (codeEl) codeEl.textContent = `#TM-${Math.floor(1000 + Math.random() * 9000)}`;
+          } else {
+            showToast(data.error || 'Gagal menyimpan transaksi', 'error');
+          }
+        } catch (e) {
+          showToast('Koneksi terputus ke server', 'error');
+        }
+      };
+
+      document.getElementById('btnCompleteCashTransaction')?.addEventListener('click', () => {
+        const input = document.getElementById('inputUangPembeli');
+        const given = Number(input?.value || 0);
+        const { grandTotal } = getCartTotals();
+        if (given < grandTotal) {
+          showToast('Uang pembeli masih kurang!', 'error');
+          return;
+        }
+        submitCheckout('TUNAI', given);
+      });
+
+      document.getElementById('btnCompleteQrisTransaction')?.addEventListener('click', () => {
+        submitCheckout('QRIS');
+      });
+
+      // Modals Trigger
+      document.getElementById('triggerEstafetShiftBtn')?.addEventListener('click', () => openModal(modalEstafet));
+      document.getElementById('triggerInputTitipanBtn')?.addEventListener('click', () => openModal(modalInputTitipan));
+      document.getElementById('triggerReturTitipanBtn')?.addEventListener('click', () => openModal(modalReturTitipan));
+      document.getElementById('triggerTutupBoothBtn')?.addEventListener('click', () => openModal(modalTutupBooth));
+
+      // Form Input Titipan (UC03)
+      document.getElementById('formInputTitipan')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payload = {
+          action: 'input',
+          nama_produk: document.getElementById('titipanNamaProduk').value,
+          qty_masuk: document.getElementById('titipanQty').value,
+          harga_awal: document.getElementById('titipanHargaPokok').value,
+          penitip: document.getElementById('titipanPenitip').value,
+        };
+
+        try {
+          const res = await fetch('/api/konsinyasi', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            closeModal(modalInputTitipan);
+            showToast('Barang titipan berhasil dicatat!', 'check_circle');
+            setTimeout(() => location.reload(), 800);
+          } else {
+            showToast(data.error || 'Gagal mencatat titipan', 'error');
+          }
+        } catch (err) {
+          showToast('Error koneksi database', 'error');
+        }
+      });
+
+      // Estafet Shift Handover (UC05)
+      document.getElementById('btnSubmitShiftHandover')?.addEventListener('click', async () => {
+        const kasAktual = Number(document.getElementById('physicalCashInput')?.value || 0);
+        const nextCrewRadio = document.querySelector('input[name="shiftNextCrew"]:checked');
+        const nextCrewId = nextCrewRadio ? nextCrewRadio.value : null;
+
+        try {
+          const res = await fetch('/api/shift', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'handover',
+              shift_id: activeShiftId,
+              kas_aktual: kasAktual,
+              next_crew_id: nextCrewId,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            closeModal(modalEstafet);
+            showToast('Estafet shift berhasil disimpan!', 'check_circle');
+            setTimeout(() => location.reload(), 1000);
+          } else {
+            showToast(data.error || 'Gagal menyimpan estafet', 'error');
+          }
+        } catch (e) {
+          showToast('Error saat mencatat estafet', 'error');
+        }
+      });
+
+      // Retur Titipan (UC06)
+      document.querySelectorAll('.btn-process-retur').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.id;
+          const input = document.querySelector(`.retur-sisa-input[data-id="${id}"]`);
+          const sisaAktual = Number(input?.value || 0);
+
+          try {
+            const res = await fetch('/api/konsinyasi', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'retur',
+                id,
+                qty_sisa_aktual: sisaAktual,
+              }),
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+              showToast(data.message, 'check_circle');
+              setTimeout(() => location.reload(), 1000);
+            } else {
+              showToast(data.error || 'Gagal memproses retur', 'error');
+            }
+          } catch (e) {
+            showToast('Error koneksi retur', 'error');
+          }
+        });
+      });
+
+      // Tutup Shift (UC07)
+      document.getElementById('btnConfirmTutupShift')?.addEventListener('click', async () => {
+        const kasAktual = Number(document.getElementById('closingPhysicalCashInput')?.value || 0);
+
+        try {
+          const res = await fetch('/api/shift', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'close',
+              shift_id: activeShiftId,
+              kas_aktual: kasAktual,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            closeModal(modalTutupBooth);
+            showToast('Shift berhasil ditutup!', 'check_circle');
+            setTimeout(() => {
+              window.location.href = '/kasir/dashboard';
+            }, 1000);
+          } else {
+            showToast(data.error || 'Gagal menutup shift', 'error');
+          }
+        } catch (e) {
+          showToast('Error saat menutup shift', 'error');
+        }
+      });
+
+      // Keyboard Hotkeys [F2, F4, F9, F10, ESC]
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F2') {
+          e.preventDefault();
+          searchInput?.focus();
+        } else if (e.key === 'F4') {
+          e.preventDefault();
+          openModal(modalInputTitipan);
+        } else if (e.key === 'F9') {
+          e.preventDefault();
+          triggerCash();
+        } else if (e.key === 'F10') {
+          e.preventDefault();
+          triggerQris();
+        } else if (e.key === 'Escape') {
+          [modalEstafet, modalInputTitipan, modalPembayaranTunai, modalPembayaranQris, modalReturTitipan, modalTutupBooth].forEach(closeModal);
+        }
+      });
+
+      // Inisialisasi Keranjang Awal
+      renderCart();
+    })();
+  </script>
+</Layout>
