@@ -5,15 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1795108492226,
-      "tag": "0000_thin_madame_hydra",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1795239883298,
-      "tag": "0001_redundant_tarantula",
+      "when": 1795244740327,
+      "tag": "0000_spotty_veda",
       "breakpoints": true
     }
   ]

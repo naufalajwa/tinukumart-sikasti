@@ -128,7 +128,7 @@ if (userSessionCookie) {
                   name="pin"
                   inputmode="numeric"
                   pattern="[0-9]*"
-                  maxlength="6"
+                  maxlength="8"
                   placeholder="••••"
                   required
                   autocomplete="current-password"
@@ -254,7 +254,7 @@ if (userSessionCookie) {
     document.querySelectorAll('.btn-numpad').forEach((button) => {
       button.addEventListener('click', () => {
         const num = button.getAttribute('data-numpad');
-        if (inputPin && inputPin.value.length < 6) {
+        if (inputPin && inputPin.value.length < 8) {
           inputPin.value += num;
           inputPin.focus();
         }

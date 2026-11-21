@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "cb1952b5-a245-4e46-83eb-1275d8fb9fe7",
+  "id": "77238af1-1374-421b-bce8-7b3469e59e24",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "konsinyasi": {
@@ -533,14 +533,7 @@
           "name": "pin",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "password": {
-          "name": "password",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
         "role": {

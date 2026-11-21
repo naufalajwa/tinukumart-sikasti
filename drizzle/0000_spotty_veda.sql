@@ -75,7 +75,6 @@ CREATE TABLE `transactions` (
 CREATE TABLE `users` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`nama` text NOT NULL,
-	`pin` text,
-	`password` text,
+	`pin` text NOT NULL,
 	`role` text DEFAULT 'kasir' NOT NULL
 );

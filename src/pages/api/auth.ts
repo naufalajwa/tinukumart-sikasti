@@ -8,12 +8,13 @@ import { eq, and, sql } from 'drizzle-orm';
  */
 function setAuthCookies(
   cookies: any,
-  user: { id: number; nama: string; role: 'kasir' | 'admin' }
+  user: { id: number; nama: string; role: 'kasir' | 'admin' },
+  isSecure: boolean = false
 ) {
   const cookieOptions = {
     path: '/',
     httpOnly: true,
-    secure: import.meta.env.PROD,
+    secure: isSecure,
     sameSite: 'lax' as const,
     maxAge: 60 * 60 * 12, // Berlaku 12 jam (durasi operasional shift)
   };
@@ -144,12 +145,18 @@ export const POST: APIRoute = async ({ request, locals, cookies, redirect, url }
       return redirect(`/?error=${encodeURIComponent(errMsg)}`);
     }
 
+    const isHttps = request.url.startsWith('https://') || request.headers.get('x-forwarded-proto') === 'https';
+
     // Set cookie session autentikasi
-    setAuthCookies(cookies, {
-      id: user.id,
-      nama: user.nama,
-      role: user.role,
-    });
+    setAuthCookies(
+      cookies,
+      {
+        id: user.id,
+        nama: user.nama,
+        role: user.role,
+      },
+      isHttps
+    );
 
     const targetRedirect = user.role === 'admin' ? '/admin/dashboard' : '/kasir/dashboard';
 
