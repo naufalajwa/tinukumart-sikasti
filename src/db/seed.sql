@@ -1,11 +1,11 @@
 -- ==========================================
 -- SEED: Users
 -- ==========================================
-INSERT INTO users (nama, pin, password, role) VALUES
-  ('Admin', NULL, 'admin123', 'admin'),
-  ('Budi', '1234', NULL, 'kasir'),
-  ('Sari', '5678', NULL, 'kasir'),
-  ('Adi', '9012', NULL, 'kasir');
+INSERT INTO users (nama, pin, role) VALUES
+  ('admin', '123456', 'admin'),
+  ('Budi', '1234', 'kasir'),
+  ('Sari', '5678', 'kasir'),
+  ('Adi', '9012', 'kasir');
 
 -- ==========================================
 -- SEED: Produk

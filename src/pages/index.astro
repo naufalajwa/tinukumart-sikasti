@@ -4,7 +4,6 @@ import Layout from '@/layouts/Layout.astro';
 // Periksa apakah ada pesan error atau notifikasi logout dari URL query params (SSR)
 const errorMsg = Astro.url.searchParams.get('error') || '';
 const logoutMsg = Astro.url.searchParams.get('logout') || '';
-const activeTabParam = Astro.url.searchParams.get('tab') || 'kasir';
 
 // Jika sudah memiliki session, user bisa langsung diarahkan ke dashboard masing-masing
 const userSessionCookie = Astro.cookies.get('user_session')?.value;
@@ -21,7 +20,7 @@ if (userSessionCookie) {
 <Layout title="Login Sistem POS SIKASTI">
   <main class="min-h-screen bg-surface flex flex-col justify-center items-center p-4 sm:p-6 lg:p-8 relative overflow-hidden">
     
-    <!-- Elemen Dekoratif Latar Belakang -->
+    <!-- Elemen Dekoratif Latar Belakang Nuansa Hijau & Emas -->
     <div class="absolute -top-32 -left-32 w-96 h-96 bg-primary-fixed/40 rounded-full blur-3xl pointer-events-none"></div>
     <div class="absolute -bottom-32 -right-32 w-96 h-96 bg-secondary-container/20 rounded-full blur-3xl pointer-events-none"></div>
 
@@ -79,212 +78,123 @@ if (userSessionCookie) {
           </div>
         )}
 
-        <!-- Segmented Tab Switcher (Kasir vs Admin) -->
-        <div class="p-3 bg-surface-container-low border-b border-surface-container">
-          <div class="grid grid-cols-2 p-1 bg-surface-container rounded-xl gap-1">
-            <button
-              type="button"
-              id="tab-btn-kasir"
-              class={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-bold transition-all duration-200 ${
-                activeTabParam === 'admin'
-                  ? 'text-on-surface-variant hover:text-on-surface'
-                  : 'bg-surface-container-lowest text-primary shadow-xs'
-              }`}
-            >
-              <span class="material-symbols-outlined text-[18px]">badge</span>
-              <span>Kasir (Shift)</span>
-            </button>
-
-            <button
-              type="button"
-              id="tab-btn-admin"
-              class={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-bold transition-all duration-200 ${
-                activeTabParam === 'admin'
-                  ? 'bg-surface-container-lowest text-primary shadow-xs'
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              <span class="material-symbols-outlined text-[18px]">admin_panel_settings</span>
-              <span>Administrator</span>
-            </button>
-          </div>
-        </div>
-
         <div class="p-6 sm:p-8">
           
-          <!-- ========================================== -->
-          <!-- PANEL 1: LOGIN KASIR (PIN)                -->
-          <!-- ========================================== -->
-          <div id="panel-kasir" class={activeTabParam === 'admin' ? 'hidden' : 'block'}>
-            <div class="mb-5 text-center">
-              <span class="inline-block px-3 py-1 bg-primary-fixed text-primary font-bold text-xs rounded-full uppercase tracking-wider mb-2">
-                Shift Operasional
-              </span>
-              <h2 class="font-headline-sm text-xl font-bold text-on-surface">Masuk sebagai Penjaga Shift</h2>
-              <p class="font-body-sm text-xs sm:text-sm text-on-surface-variant mt-1">
-                Ketik PIN rahasia Anda untuk membuka akses transaksi kasir
-              </p>
-            </div>
-
-            <form id="form-kasir" method="POST" action="/api/auth" class="space-y-5">
-              <input type="hidden" name="type" value="pin" />
-
-              <div>
-                <label for="input-pin" class="block font-label-action text-xs font-bold text-on-surface uppercase tracking-wider mb-2 text-center">
-                  PIN Kasir
-                </label>
-                <div class="relative max-w-xs mx-auto">
-                  <input
-                    type="password"
-                    id="input-pin"
-                    name="pin"
-                    inputmode="numeric"
-                    pattern="[0-9]*"
-                    maxlength="6"
-                    placeholder="••••"
-                    required
-                    autofocus
-                    autocomplete="off"
-                    class="w-full bg-surface-container-low text-on-surface border border-outline-variant rounded-xl py-3 px-4 text-center font-label-numeric text-2xl font-bold tracking-widest focus:border-primary focus:bg-surface-container-lowest focus:outline-none focus:ring-2 focus:ring-primary/20 transition shadow-inner"
-                  />
-                  <!-- Toggle Show/Hide PIN -->
-                  <button
-                    type="button"
-                    id="btn-toggle-pin"
-                    title="Tampilkan / Sembunyikan PIN"
-                    class="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface p-1.5 rounded-lg focus:outline-none"
-                  >
-                    <span class="material-symbols-outlined text-[20px]" id="icon-eye-pin">visibility</span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Virtual Numpad Touchscreen POS -->
-              <div class="max-w-xs mx-auto pt-1">
-                <div class="grid grid-cols-3 gap-2 text-center">
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
-                    <button
-                      type="button"
-                      data-numpad={num}
-                      class="btn-numpad py-3 rounded-xl bg-surface-container-low hover:bg-surface-container active:bg-primary-fixed border border-surface-container text-on-surface font-bold text-lg font-label-numeric transition duration-150 shadow-xs active:scale-95"
-                    >
-                      {num}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    id="btn-numpad-clear"
-                    class="py-3 rounded-xl bg-error-container/50 hover:bg-error-container text-error font-bold text-sm transition duration-150 active:scale-95 border border-error/20"
-                  >
-                    C
-                  </button>
-                  <button
-                    type="button"
-                    data-numpad="0"
-                    class="btn-numpad py-3 rounded-xl bg-surface-container-low hover:bg-surface-container active:bg-primary-fixed border border-surface-container text-on-surface font-bold text-lg font-label-numeric transition duration-150 shadow-xs active:scale-95"
-                  >
-                    0
-                  </button>
-                  <button
-                    type="button"
-                    id="btn-numpad-del"
-                    class="py-3 rounded-xl bg-surface-container-low hover:bg-surface-container border border-surface-container text-on-surface-variant font-bold text-base transition duration-150 active:scale-95 flex items-center justify-center"
-                    title="Hapus Digit Terakhir"
-                  >
-                    <span class="material-symbols-outlined text-[20px]">backspace</span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Tombol Submit Kasir -->
-              <button
-                type="submit"
-                class="w-full flex items-center justify-center gap-2 py-3.5 px-6 rounded-xl bg-primary hover:bg-primary-dark active:bg-primary-dark text-on-primary font-bold text-base transition duration-200 shadow-md active:scale-95 group font-label-action"
-              >
-                <span>Masuk sebagai Kasir</span>
-                <span class="material-symbols-outlined text-secondary-container transition-transform group-hover:translate-x-1">arrow_forward</span>
-              </button>
-            </form>
+          <div class="mb-5 text-center">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-primary-fixed text-primary font-bold text-xs rounded-full uppercase tracking-wider mb-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-secondary-gold"></span>
+              Portal Masuk Terpadu
+            </span>
+            <h2 class="font-headline-sm text-xl sm:text-2xl font-bold text-on-surface">Masuk ke Sistem</h2>
+            <p class="font-body-sm text-xs sm:text-sm text-on-surface-variant mt-1">
+              Masukkan Username dan PIN untuk akses Kasir atau Administrator
+            </p>
           </div>
 
-          <!-- ========================================== -->
-          <!-- PANEL 2: LOGIN ADMIN (Username & Password) -->
-          <!-- ========================================== -->
-          <div id="panel-admin" class={activeTabParam === 'admin' ? 'block' : 'hidden'}>
-            <div class="mb-5 text-center">
-              <span class="inline-block px-3 py-1 bg-secondary-container/30 text-on-secondary-container font-bold text-xs rounded-full uppercase tracking-wider mb-2">
-                Manajemen Sistem
-              </span>
-              <h2 class="font-headline-sm text-xl font-bold text-on-surface">Masuk sebagai Administrator</h2>
-              <p class="font-body-sm text-xs sm:text-sm text-on-surface-variant mt-1">
-                Akses penuh monitoring, master produk, data penjaga, dan laporan booth
-              </p>
+          <!-- Form Login Terpadu -->
+          <form id="form-login" method="POST" action="/api/auth" class="space-y-4">
+            
+            <!-- Input Username -->
+            <div>
+              <label for="input-username" class="block font-label-action text-xs font-bold text-on-surface uppercase tracking-wider mb-1.5">
+                Nama Pengguna (Username)
+              </label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-outline">
+                  <span class="material-symbols-outlined text-[20px]">person</span>
+                </span>
+                <input
+                  type="text"
+                  id="input-username"
+                  name="username"
+                  placeholder="Contoh: admin atau Budi"
+                  required
+                  autofocus
+                  autocomplete="username"
+                  class="w-full bg-surface-container-low text-on-surface border border-outline-variant rounded-xl py-3 pl-11 pr-4 text-sm font-semibold focus:border-primary focus:bg-surface-container-lowest focus:outline-none focus:ring-2 focus:ring-primary/20 transition shadow-xs"
+                />
+              </div>
             </div>
 
-            <form id="form-admin" method="POST" action="/api/auth" class="space-y-4">
-              <input type="hidden" name="type" value="admin" />
-
-              <div>
-                <label for="input-admin-username" class="block font-label-action text-xs font-bold text-on-surface uppercase tracking-wider mb-1.5">
-                  Nama Pengguna (Username)
-                </label>
-                <div class="relative">
-                  <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-outline">
-                    <span class="material-symbols-outlined text-[20px]">person</span>
-                  </span>
-                  <input
-                    type="text"
-                    id="input-admin-username"
-                    name="username"
-                    placeholder="Contoh: admin"
-                    required
-                    autocomplete="username"
-                    class="w-full bg-surface-container-low text-on-surface border border-outline-variant rounded-xl py-3 pl-11 pr-4 text-sm focus:border-primary focus:bg-surface-container-lowest focus:outline-none focus:ring-2 focus:ring-primary/20 transition shadow-xs"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label for="input-admin-password" class="block font-label-action text-xs font-bold text-on-surface uppercase tracking-wider mb-1.5">
-                  Kata Sandi (Password)
-                </label>
-                <div class="relative">
-                  <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-outline">
-                    <span class="material-symbols-outlined text-[20px]">lock</span>
-                  </span>
-                  <input
-                    type="password"
-                    id="input-admin-password"
-                    name="password"
-                    placeholder="••••••••"
-                    required
-                    autocomplete="current-password"
-                    class="w-full bg-surface-container-low text-on-surface border border-outline-variant rounded-xl py-3 pl-11 pr-11 text-sm focus:border-primary focus:bg-surface-container-lowest focus:outline-none focus:ring-2 focus:ring-primary/20 transition shadow-xs"
-                  />
-                  <!-- Toggle Show/Hide Password -->
-                  <button
-                    type="button"
-                    id="btn-toggle-password"
-                    title="Tampilkan / Sembunyikan Password"
-                    class="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface p-1.5 rounded-lg focus:outline-none"
-                  >
-                    <span class="material-symbols-outlined text-[20px]" id="icon-eye-pass">visibility</span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Tombol Submit Admin -->
-              <div class="pt-2">
+            <!-- Input PIN -->
+            <div>
+              <label for="input-pin" class="block font-label-action text-xs font-bold text-on-surface uppercase tracking-wider mb-1.5 text-center">
+                PIN Keamanan
+              </label>
+              <div class="relative max-w-xs mx-auto">
+                <input
+                  type="password"
+                  id="input-pin"
+                  name="pin"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  maxlength="6"
+                  placeholder="••••"
+                  required
+                  autocomplete="current-password"
+                  class="w-full bg-surface-container-low text-on-surface border border-outline-variant rounded-xl py-3 px-4 text-center font-label-numeric text-2xl font-bold tracking-widest focus:border-primary focus:bg-surface-container-lowest focus:outline-none focus:ring-2 focus:ring-primary/20 transition shadow-inner"
+                />
+                <!-- Toggle Show/Hide PIN -->
                 <button
-                  type="submit"
-                  class="w-full flex items-center justify-center gap-2 py-3.5 px-6 rounded-xl bg-primary hover:bg-primary-dark active:bg-primary-dark text-on-primary font-bold text-base transition duration-200 shadow-md active:scale-95 group font-label-action"
+                  type="button"
+                  id="btn-toggle-pin"
+                  title="Tampilkan / Sembunyikan PIN"
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-outline hover:text-on-surface p-1.5 rounded-lg focus:outline-none"
                 >
-                  <span>Masuk sebagai Admin</span>
-                  <span class="material-symbols-outlined text-secondary-container transition-transform group-hover:translate-x-1">arrow_forward</span>
+                  <span class="material-symbols-outlined text-[20px]" id="icon-eye-pin">visibility</span>
                 </button>
               </div>
-            </form>
-          </div>
+            </div>
+
+            <!-- Virtual Numpad Touchscreen POS -->
+            <div class="max-w-xs mx-auto pt-1">
+              <div class="grid grid-cols-3 gap-2 text-center">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                  <button
+                    type="button"
+                    data-numpad={num}
+                    class="btn-numpad py-3 rounded-xl bg-surface-container-low hover:bg-surface-container active:bg-primary-fixed border border-surface-container text-on-surface font-bold text-lg font-label-numeric transition duration-150 shadow-xs active:scale-95"
+                  >
+                    {num}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  id="btn-numpad-clear"
+                  class="py-3 rounded-xl bg-error-container/50 hover:bg-error-container text-error font-bold text-sm transition duration-150 active:scale-95 border border-error/20"
+                >
+                  C
+                </button>
+                <button
+                  type="button"
+                  data-numpad="0"
+                  class="btn-numpad py-3 rounded-xl bg-surface-container-low hover:bg-surface-container active:bg-primary-fixed border border-surface-container text-on-surface font-bold text-lg font-label-numeric transition duration-150 shadow-xs active:scale-95"
+                >
+                  0
+                </button>
+                <button
+                  type="button"
+                  id="btn-numpad-del"
+                  class="py-3 rounded-xl bg-surface-container-low hover:bg-surface-container border border-surface-container text-on-surface-variant font-bold text-base transition duration-150 active:scale-95 flex items-center justify-center"
+                  title="Hapus Digit Terakhir"
+                >
+                  <span class="material-symbols-outlined text-[20px]">backspace</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Tombol Submit -->
+            <div class="pt-2">
+              <button
+                type="submit"
+                id="btn-submit"
+                class="w-full flex items-center justify-center gap-2 py-3.5 px-6 rounded-xl bg-primary hover:bg-primary-dark active:bg-primary-dark text-on-primary font-bold text-base transition duration-200 shadow-md active:scale-95 group font-label-action"
+              >
+                <span>Masuk ke Sistem</span>
+                <span class="material-symbols-outlined text-secondary-container transition-transform group-hover:translate-x-1">arrow_forward</span>
+              </button>
+            </div>
+          </form>
 
         </div>
 
@@ -297,31 +207,30 @@ if (userSessionCookie) {
           <div class="flex flex-wrap gap-2 text-xs">
             <button
               type="button"
+              class="btn-demo-pill px-2.5 py-1.5 rounded-lg bg-surface-container-lowest border border-secondary-gold/50 text-on-surface hover:border-secondary-gold hover:text-secondary-gold transition font-medium flex items-center gap-1.5 shadow-2xs"
+              data-username="admin"
+              data-pin="123456"
+            >
+              <span class="w-2 h-2 rounded-full bg-secondary-container"></span>
+              Admin (<code class="font-mono font-bold">admin / 123456</code>)
+            </button>
+            <button
+              type="button"
               class="btn-demo-pill px-2.5 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant text-on-surface hover:border-primary hover:text-primary transition font-medium flex items-center gap-1.5 shadow-2xs"
-              data-role="kasir"
+              data-username="Budi"
               data-pin="1234"
             >
               <span class="w-2 h-2 rounded-full bg-primary"></span>
-              Kasir Budi (PIN: <code class="font-mono font-bold">1234</code>)
+              Kasir Budi (<code class="font-mono font-bold">Budi / 1234</code>)
             </button>
             <button
               type="button"
               class="btn-demo-pill px-2.5 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant text-on-surface hover:border-primary hover:text-primary transition font-medium flex items-center gap-1.5 shadow-2xs"
-              data-role="kasir"
+              data-username="Sari"
               data-pin="5678"
             >
               <span class="w-2 h-2 rounded-full bg-primary"></span>
-              Kasir Sari (PIN: <code class="font-mono font-bold">5678</code>)
-            </button>
-            <button
-              type="button"
-              class="btn-demo-pill px-2.5 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant text-on-surface hover:border-secondary-gold hover:text-secondary-gold transition font-medium flex items-center gap-1.5 shadow-2xs"
-              data-role="admin"
-              data-username="admin"
-              data-password="admin123"
-            >
-              <span class="w-2 h-2 rounded-full bg-secondary-container"></span>
-              Admin (<code class="font-mono font-bold">admin / admin123</code>)
+              Kasir Sari (<code class="font-mono font-bold">Sari / 5678</code>)
             </button>
           </div>
         </div>
@@ -336,38 +245,12 @@ if (userSessionCookie) {
     </div>
   </main>
 
-  <!-- Client-side Logic (Tab Switching, Numpad, Quick Fill) -->
+  <!-- Client-side Logic (Numpad, Masking, Demo Quick Fill) -->
   <script is:inline>
-    const btnKasir = document.getElementById('tab-btn-kasir');
-    const btnAdmin = document.getElementById('tab-btn-admin');
-    const panelKasir = document.getElementById('panel-kasir');
-    const panelAdmin = document.getElementById('panel-admin');
+    const inputUsername = document.getElementById('input-username');
     const inputPin = document.getElementById('input-pin');
-    const inputAdminUsername = document.getElementById('input-admin-username');
-    const inputAdminPassword = document.getElementById('input-admin-password');
 
-    function switchTab(tab) {
-      if (tab === 'kasir') {
-        panelKasir.classList.remove('hidden');
-        panelAdmin.classList.add('hidden');
-
-        btnKasir.className = 'flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-bold transition-all duration-200 bg-surface-container-lowest text-primary shadow-xs';
-        btnAdmin.className = 'flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-bold transition-all duration-200 text-on-surface-variant hover:text-on-surface';
-        inputPin.focus();
-      } else {
-        panelAdmin.classList.remove('hidden');
-        panelKasir.classList.add('hidden');
-
-        btnAdmin.className = 'flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-bold transition-all duration-200 bg-surface-container-lowest text-primary shadow-xs';
-        btnKasir.className = 'flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-bold transition-all duration-200 text-on-surface-variant hover:text-on-surface';
-        inputAdminUsername.focus();
-      }
-    }
-
-    btnKasir?.addEventListener('click', () => switchTab('kasir'));
-    btnAdmin?.addEventListener('click', () => switchTab('admin'));
-
-    // Numpad Touchscreen Handlers
+    // Numpad Touchscreen Handlers (mengisi input PIN)
     document.querySelectorAll('.btn-numpad').forEach((button) => {
       button.addEventListener('click', () => {
         const num = button.getAttribute('data-numpad');
@@ -392,7 +275,7 @@ if (userSessionCookie) {
       }
     });
 
-    // Toggle Masking Password & PIN
+    // Toggle Masking PIN
     const btnTogglePin = document.getElementById('btn-toggle-pin');
     btnTogglePin?.addEventListener('click', () => {
       if (inputPin) {
@@ -403,32 +286,14 @@ if (userSessionCookie) {
       }
     });
 
-    const btnTogglePass = document.getElementById('btn-toggle-password');
-    btnTogglePass?.addEventListener('click', () => {
-      if (inputAdminPassword) {
-        const isPass = inputAdminPassword.type === 'password';
-        inputAdminPassword.type = isPass ? 'text' : 'password';
-        const icon = document.getElementById('icon-eye-pass');
-        if (icon) icon.textContent = isPass ? 'visibility_off' : 'visibility';
-      }
-    });
-
     // Demo Pills Autocomplete
     document.querySelectorAll('.btn-demo-pill').forEach((pill) => {
       pill.addEventListener('click', () => {
-        const role = pill.getAttribute('data-role');
-        if (role === 'kasir') {
-          switchTab('kasir');
-          if (inputPin) {
-            inputPin.value = pill.getAttribute('data-pin') || '';
-            inputPin.focus();
-          }
-        } else if (role === 'admin') {
-          switchTab('admin');
-          if (inputAdminUsername) inputAdminUsername.value = pill.getAttribute('data-username') || '';
-          if (inputAdminPassword) inputAdminPassword.value = pill.getAttribute('data-password') || '';
-          inputAdminPassword?.focus();
-        }
+        const username = pill.getAttribute('data-username') || '';
+        const pin = pill.getAttribute('data-pin') || '';
+        if (inputUsername) inputUsername.value = username;
+        if (inputPin) inputPin.value = pin;
+        inputPin?.focus();
       });
     });
   </script>

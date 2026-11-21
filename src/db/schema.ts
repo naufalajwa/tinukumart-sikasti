@@ -7,8 +7,7 @@ import { sql } from 'drizzle-orm';
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   nama: text('nama').notNull(),
-  pin: text('pin'),
-  password: text('password'),
+  pin: text('pin').notNull(),
   role: text('role', { enum: ['kasir', 'admin'] }).notNull().default('kasir'),
 });
 

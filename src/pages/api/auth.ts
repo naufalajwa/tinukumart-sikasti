@@ -62,7 +62,7 @@ export const GET: APIRoute = async ({ url, cookies, redirect }) => {
 
 /**
  * POST /api/auth
- * Login handler untuk Kasir (PIN) dan Admin (Username + Password).
+ * Login handler terpadu untuk Kasir dan Admin (Username + PIN).
  * Mendukung form POST standar maupun fetch JSON.
  */
 export const POST: APIRoute = async ({ request, locals, cookies, redirect, url }) => {
@@ -107,130 +107,64 @@ export const POST: APIRoute = async ({ request, locals, cookies, redirect, url }
     }
 
     const db = createDb(dbBinding);
-    const loginType = String(body.type || '').trim().toLowerCase();
+    const username = String(body.username || body.nama || '').trim();
+    const pin = String(body.pin || '').trim();
 
-    // ==========================================
-    // 1. LOGIN KASIR (Menggunakan PIN)
-    // ==========================================
-    if (loginType === 'pin' || loginType === 'kasir') {
-      const pin = String(body.pin || '').trim();
-
-      if (!pin) {
-        const errMsg = 'Silakan masukkan PIN kasir Anda.';
-        if (acceptsJson) {
-          return new Response(JSON.stringify({ error: errMsg }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-        return redirect(`/?error=${encodeURIComponent(errMsg)}&tab=kasir`);
-      }
-
-      // Cari user kasir dengan PIN yang cocok
-      const [kasir] = await db
-        .select()
-        .from(users)
-        .where(and(eq(users.pin, pin), eq(users.role, 'kasir')))
-        .limit(1);
-
-      if (!kasir) {
-        const errMsg = 'PIN kasir tidak ditemukan atau salah. Silakan coba lagi.';
-        if (acceptsJson) {
-          return new Response(JSON.stringify({ error: errMsg }), {
-            status: 401,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-        return redirect(`/?error=${encodeURIComponent(errMsg)}&tab=kasir`);
-      }
-
-      // Set cookie session
-      setAuthCookies(cookies, {
-        id: kasir.id,
-        nama: kasir.nama,
-        role: 'kasir',
-      });
-
+    if (!username || !pin) {
+      const errMsg = 'Username dan PIN wajib diisi.';
       if (acceptsJson) {
-        return new Response(
-          JSON.stringify({
-            success: true,
-            redirect: '/kasir/dashboard',
-            user: { id: kasir.id, nama: kasir.nama, role: kasir.role },
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        );
+        return new Response(JSON.stringify({ error: errMsg }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
-
-      return redirect('/kasir/dashboard');
+      return redirect(`/?error=${encodeURIComponent(errMsg)}`);
     }
 
-    // ==========================================
-    // 2. LOGIN ADMIN (Nama Pengguna & Password)
-    // ==========================================
-    if (loginType === 'admin') {
-      const username = String(body.username || body.nama || '').trim();
-      const password = String(body.password || '').trim();
+    // Cari user berdasarkan username (case-insensitive) dan PIN yang cocok
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          sql`lower(${users.nama}) = lower(${username})`,
+          eq(users.pin, pin)
+        )
+      )
+      .limit(1);
 
-      if (!username || !password) {
-        const errMsg = 'Nama pengguna dan kata sandi admin wajib diisi.';
-        if (acceptsJson) {
-          return new Response(JSON.stringify({ error: errMsg }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-        return redirect(`/?error=${encodeURIComponent(errMsg)}&tab=admin`);
-      }
-
-      // Cari user admin berdasarkan nama (case-insensitive) dan role admin
-      const [admin] = await db
-        .select()
-        .from(users)
-        .where(and(sql`lower(${users.nama}) = lower(${username})`, eq(users.role, 'admin')))
-        .limit(1);
-
-      if (!admin || admin.password !== password) {
-        const errMsg = 'Nama pengguna atau kata sandi admin salah.';
-        if (acceptsJson) {
-          return new Response(JSON.stringify({ error: errMsg }), {
-            status: 401,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-        return redirect(`/?error=${encodeURIComponent(errMsg)}&tab=admin`);
-      }
-
-      // Set cookie session
-      setAuthCookies(cookies, {
-        id: admin.id,
-        nama: admin.nama,
-        role: 'admin',
-      });
-
+    if (!user) {
+      const errMsg = 'Username atau PIN salah.';
       if (acceptsJson) {
-        return new Response(
-          JSON.stringify({
-            success: true,
-            redirect: '/admin/dashboard',
-            user: { id: admin.id, nama: admin.nama, role: admin.role },
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        );
+        return new Response(JSON.stringify({ error: errMsg }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
-
-      return redirect('/admin/dashboard');
+      return redirect(`/?error=${encodeURIComponent(errMsg)}`);
     }
 
-    // Tipe request tidak dikenali
-    const errMsg = 'Tipe autentikasi tidak valid. Pilih kasir atau admin.';
+    // Set cookie session autentikasi
+    setAuthCookies(cookies, {
+      id: user.id,
+      nama: user.nama,
+      role: user.role,
+    });
+
+    const targetRedirect = user.role === 'admin' ? '/admin/dashboard' : '/kasir/dashboard';
+
     if (acceptsJson) {
-      return new Response(JSON.stringify({ error: errMsg }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          redirect: targetRedirect,
+          user: { id: user.id, nama: user.nama, role: user.role },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
     }
-    return redirect(`/?error=${encodeURIComponent(errMsg)}`);
+
+    return redirect(targetRedirect);
   } catch (error: any) {
     console.error('Auth Error:', error);
     const errMsg = 'Terjadi kesalahan sistem saat proses autentikasi.';
