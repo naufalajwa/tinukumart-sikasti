@@ -10,7 +10,7 @@ const userRole = Astro.cookies.get('user_role')?.value;
 const userNama = Astro.cookies.get('user_nama')?.value || 'Admin';
 
 if (!userRole || userRole !== 'admin') {
-  return Astro.redirect('/?error=' + encodeURIComponent('Akses ditolak. Silakan login sebagai administrator.') + '&tab=admin');
+  return Astro.redirect('/');
 }
 
 // 2. Format Tanggal Hari Ini
@@ -176,18 +176,30 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
 
         <!-- Filter Console (Hidden saat print) -->
         <div class="bg-surface-container-lowest p-4 rounded-2xl border border-surface-container shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
-          <div class="flex items-center gap-1.5 flex-wrap">
-            <button type="button" class="px-3.5 py-1.5 rounded-xl bg-primary text-on-primary font-bold text-xs shadow-xs">
+          <div class="flex items-center gap-1.5 flex-wrap" id="reportFilterNav">
+            <button
+              type="button"
+              class="report-filter-btn px-3.5 py-1.5 rounded-xl bg-primary text-on-primary font-bold text-xs shadow-xs transition"
+              data-filter="ALL"
+            >
               Semua Transaksi ({allTx.length})
             </button>
-            <button type="button" class="px-3.5 py-1.5 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-semibold text-xs transition">
+            <button
+              type="button"
+              class="report-filter-btn px-3.5 py-1.5 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-semibold text-xs transition"
+              data-filter="TUNAI"
+            >
               Tunai ({allTx.filter(t => t.metode === 'TUNAI').length})
             </button>
-            <button type="button" class="px-3.5 py-1.5 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-semibold text-xs transition">
+            <button
+              type="button"
+              class="report-filter-btn px-3.5 py-1.5 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-semibold text-xs transition"
+              data-filter="QRIS"
+            >
               QRIS ({allTx.filter(t => t.metode === 'QRIS').length})
             </button>
           </div>
-          <span class="text-xs text-on-surface-variant font-medium">
+          <span class="text-xs text-on-surface-variant font-medium" id="reportCountInfo">
             Menampilkan data buku kas operasional TinukuMart
           </span>
         </div>
@@ -229,7 +241,7 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
                   </tr>
                 ) : (
                   allTx.map((tx, idx) => (
-                    <tr class="hover:bg-surface-container-low/50 transition">
+                    <tr class="tx-row hover:bg-surface-container-low/50 transition" data-metode={tx.metode}>
                       <td class="py-3.5 px-4 text-center font-mono text-xs text-outline">{idx + 1}</td>
                       <td class="py-3.5 px-4 font-mono font-bold text-primary">#TM-{String(tx.id).padStart(4, '0')}</td>
                       <td class="py-3.5 px-4 font-mono text-xs text-on-surface-variant">
@@ -288,6 +300,41 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
   </div>
 
   <script is:inline>
+    // Filter Transaksi Client-side (Semua, Tunai, QRIS)
+    const filterButtons = document.querySelectorAll('.report-filter-btn');
+    const txRows = document.querySelectorAll('.tx-row');
+    const countInfo = document.getElementById('reportCountInfo');
+
+    filterButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const filter = btn.dataset.filter || 'ALL';
+
+        // Update styling tombol aktif
+        filterButtons.forEach(b => {
+          b.className = 'report-filter-btn px-3.5 py-1.5 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-semibold text-xs transition';
+        });
+        btn.className = 'report-filter-btn px-3.5 py-1.5 rounded-xl bg-primary text-on-primary font-bold text-xs shadow-xs transition';
+
+        // Filter baris tabel
+        let visibleCount = 0;
+        txRows.forEach(row => {
+          const rowMetode = row.getAttribute('data-metode') || '';
+          if (filter === 'ALL' || rowMetode.toUpperCase() === filter.toUpperCase()) {
+            row.classList.remove('hidden');
+            visibleCount++;
+          } else {
+            row.classList.add('hidden');
+          }
+        });
+
+        if (countInfo) {
+          countInfo.textContent = filter === 'ALL'
+            ? `Menampilkan seluruh ${visibleCount} transaksi kasir`
+            : `Menampilkan ${visibleCount} transaksi metode ${filter}`;
+        }
+      });
+    });
+
     // CSV Export Handler
     document.getElementById('btnDownloadCsv')?.addEventListener('click', () => {
       const table = document.getElementById('reportTable');

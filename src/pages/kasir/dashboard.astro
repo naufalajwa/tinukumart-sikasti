@@ -10,7 +10,7 @@ const userNama = Astro.cookies.get('user_nama')?.value || 'Kasir';
 const userId = Astro.cookies.get('user_id')?.value;
 
 if (!userRole || userRole !== 'kasir' || !userId) {
-  return Astro.redirect('/?error=' + encodeURIComponent('Sesi habis atau bukan kasir. Silakan login kembali.') + '&tab=kasir');
+  return Astro.redirect('/');
 }
 
 // 2. Format Tanggal Hari Ini (WIB Asia/Jakarta)

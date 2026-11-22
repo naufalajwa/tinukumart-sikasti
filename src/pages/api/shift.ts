@@ -45,7 +45,7 @@ export const POST: APIRoute = async ({ request, locals, cookies, redirect }) => 
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      return redirect(`/?error=${encodeURIComponent(errMsg)}&tab=kasir`);
+      return redirect('/');
     }
 
     const currentUserId = parseInt(userIdStr, 10);

@@ -10,7 +10,7 @@ const userRole = Astro.cookies.get('user_role')?.value;
 const userNama = Astro.cookies.get('user_nama')?.value || 'Admin';
 
 if (!userRole || userRole !== 'admin') {
-  return Astro.redirect('/?error=' + encodeURIComponent('Akses ditolak. Silakan login sebagai administrator.') + '&tab=admin');
+  return Astro.redirect('/');
 }
 
 // 2. Handle POST Request untuk CRUD Produk (SSR)

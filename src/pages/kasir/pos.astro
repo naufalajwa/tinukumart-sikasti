@@ -10,7 +10,7 @@ const userNama = Astro.cookies.get('user_nama')?.value || 'Kasir';
 const userId = Astro.cookies.get('user_id')?.value;
 
 if (!userRole || userRole !== 'kasir' || !userId) {
-  return Astro.redirect('/?error=' + encodeURIComponent('Sesi habis atau bukan kasir. Silakan login kembali.') + '&tab=kasir');
+  return Astro.redirect('/');
 }
 
 // 2. Format Tanggal Hari Ini
@@ -385,26 +385,6 @@ const orderCode = `TM-${randomOrderNum}`;
                 <span>Kosongkan</span>
               </button>
             </div>
-
-            <!-- Dine-in vs Takeaway Segmented Control -->
-            <div class="grid grid-cols-2 p-1 bg-surface-container rounded-lg text-xs font-bold">
-              <button
-                type="button"
-                class="dine-btn py-1.5 rounded-md font-label-action text-on-primary bg-primary shadow-xs flex items-center justify-center gap-1 transition-all"
-                id="btnDineIn"
-              >
-                <span class="material-symbols-outlined text-[16px]">restaurant</span>
-                <span>Makan di Sini</span>
-              </button>
-              <button
-                type="button"
-                class="dine-btn py-1.5 rounded-md font-label-action text-on-surface-variant hover:text-on-surface flex items-center justify-center gap-1 transition-all"
-                id="btnTakeaway"
-              >
-                <span class="material-symbols-outlined text-[16px]">takeout_dining</span>
-                <span>Bawa Pulang</span>
-              </button>
-            </div>
           </div>
 
           <!-- Selected Items Container (Scrollable) -->
@@ -415,14 +395,8 @@ const orderCode = `TM-${randomOrderNum}`;
           <!-- Order Subtotal Details -->
           <div class="p-space-md bg-surface-container-low/70 border-t border-surface-container flex flex-col gap-1.5">
             <div class="flex justify-between items-center text-[13px] text-on-surface-variant">
-              <span>Subtotal (<span class="font-bold" id="cartCountBadge">0</span> item)</span>
+              <span>Total Item (<span class="font-bold" id="cartCountBadge">0</span> item)</span>
               <span class="font-label-numeric font-semibold text-on-surface" id="subtotalDisplay">Rp 0</span>
-            </div>
-            <div class="flex justify-between items-center text-[13px] text-primary">
-              <span class="flex items-center gap-1">
-                <span class="material-symbols-outlined text-[15px]">school</span> Diskon Mahasiswa (KTM)
-              </span>
-              <span class="font-label-numeric font-bold" id="discountDisplay">Rp 0</span>
             </div>
           </div>
 
@@ -430,7 +404,7 @@ const orderCode = `TM-${randomOrderNum}`;
           <div class="px-space-md py-3.5 bg-primary text-on-primary flex items-center justify-between">
             <div>
               <span class="font-label-action text-[11px] uppercase tracking-wider text-primary-fixed block font-bold">TOTAL PEMBAYARAN</span>
-              <span class="font-body-sm text-[11px] text-on-primary-container">Harga bersih termasuk diskon</span>
+              <span class="font-body-sm text-[11px] text-on-primary-container">Total pesanan kasir booth</span>
             </div>
             <div class="text-right">
               <span class="font-currency-display text-[26px] font-extrabold text-secondary-container tracking-tight" id="grandTotalDisplay">
@@ -937,12 +911,9 @@ const orderCode = `TM-${randomOrderNum}`;
         { id: 3, name: 'Risol Mayo Beef Melt (Titipan)', price: 8000, modal: 6500, tipe: 'konsinyasi', qty: 3 }
       ];
 
-      const discountAmount = 4000; // Diskon KTM Mahasiswa jika subtotal >= 30.000
-
       // DOM Elements
       const cartContainer = document.getElementById('cartItemsContainer');
       const subtotalDisplay = document.getElementById('subtotalDisplay');
-      const discountDisplay = document.getElementById('discountDisplay');
       const grandTotalDisplay = document.getElementById('grandTotalDisplay');
       const cartCountBadge = document.getElementById('cartCountBadge');
       const toast = document.getElementById('toastNotification');
@@ -1004,12 +975,11 @@ const orderCode = `TM-${randomOrderNum}`;
       setInterval(updateClock, 1000);
       updateClock();
 
-      // Hitung Total Keranjang
+      // Hitung Total Keranjang (Murni harga barang tanpa potongan)
       const getCartTotals = () => {
         const subtotal = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
-        const activeDiscount = subtotal >= 30000 ? discountAmount : 0;
-        const grandTotal = Math.max(0, subtotal - activeDiscount);
-        return { subtotal, activeDiscount, grandTotal };
+        const grandTotal = subtotal;
+        return { subtotal, grandTotal };
       };
 
       // Render Cart
@@ -1017,7 +987,7 @@ const orderCode = `TM-${randomOrderNum}`;
         if (!cartContainer) return;
         cartContainer.innerHTML = '';
         let totalQty = 0;
-        const { subtotal, activeDiscount, grandTotal } = getCartTotals();
+        const { subtotal, grandTotal } = getCartTotals();
 
         if (cart.length === 0) {
           cartContainer.innerHTML = `
@@ -1058,7 +1028,6 @@ const orderCode = `TM-${randomOrderNum}`;
 
         if (cartCountBadge) cartCountBadge.textContent = String(totalQty);
         if (subtotalDisplay) subtotalDisplay.textContent = formatRp(subtotal);
-        if (discountDisplay) discountDisplay.textContent = activeDiscount > 0 ? `-${formatRp(activeDiscount)}` : 'Rp 0';
         if (grandTotalDisplay) grandTotalDisplay.textContent = formatRp(grandTotal);
       };
 
@@ -1115,20 +1084,6 @@ const orderCode = `TM-${randomOrderNum}`;
           renderCart();
           showToast('Keranjang pesanan dikosongkan', 'delete_sweep');
         }
-      });
-
-      // Dine Option Buttons
-      const btnDineIn = document.getElementById('btnDineIn');
-      const btnTakeaway = document.getElementById('btnTakeaway');
-      btnDineIn?.addEventListener('click', () => {
-        btnDineIn.className = 'dine-btn py-1.5 rounded-md font-label-action text-on-primary bg-primary shadow-xs flex items-center justify-center gap-1 transition-all';
-        btnTakeaway.className = 'dine-btn py-1.5 rounded-md font-label-action text-on-surface-variant hover:text-on-surface flex items-center justify-center gap-1 transition-all';
-        showToast('Pesanan diset: Makan di Sini');
-      });
-      btnTakeaway?.addEventListener('click', () => {
-        btnTakeaway.className = 'dine-btn py-1.5 rounded-md font-label-action text-on-primary bg-primary shadow-xs flex items-center justify-center gap-1 transition-all';
-        btnDineIn.className = 'dine-btn py-1.5 rounded-md font-label-action text-on-surface-variant hover:text-on-surface flex items-center justify-center gap-1 transition-all';
-        showToast('Pesanan diset: Bawa Pulang');
       });
 
       // Category Filter Pills
