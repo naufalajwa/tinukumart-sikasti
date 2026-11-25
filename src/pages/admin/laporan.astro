@@ -70,40 +70,52 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
     </div>
 
     <!-- Main Content Area -->
-    <div class="flex-1 pl-64 print:pl-0 flex flex-col min-w-0">
+    <div class="flex-1 lg:pl-64 pl-0 print:pl-0 flex flex-col min-w-0 transition-all duration-300">
       
       <!-- Top Sticky Bar (Hidden saat cetak print) -->
-      <header class="h-16 bg-surface-container-lowest border-b border-surface-container px-8 flex items-center justify-between sticky top-0 z-30 shadow-xs print:hidden">
-        <div class="flex items-center gap-3">
-          <span class="material-symbols-outlined text-primary text-[24px]">bar_chart</span>
-          <h2 class="font-headline-sm text-base font-bold text-primary">Rekapitulasi Laporan Keuangan Booth</h2>
+      <header class="h-16 bg-surface-container-lowest border-b border-surface-container px-4 sm:px-6 lg:px-8 flex items-center justify-between sticky top-0 z-30 shadow-xs print:hidden">
+        <div class="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <!-- Mobile Hamburger Toggle -->
+          <button
+            type="button"
+            class="btn-open-sidebar lg:hidden p-2 -ml-1 rounded-xl text-primary hover:bg-surface-container transition flex items-center justify-center shrink-0"
+            title="Buka Menu Navigasi"
+          >
+            <span class="material-symbols-outlined text-[24px]">menu</span>
+          </button>
+
+          <span class="material-symbols-outlined text-primary text-[24px] hidden sm:block">bar_chart</span>
+          <h2 class="font-headline-sm text-sm sm:text-base font-bold text-primary truncate">Laporan Keuangan Booth</h2>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 shrink-0">
           <!-- Button Cetak PDF -->
           <button
             type="button"
             onclick="window.print()"
-            class="h-9 px-3.5 rounded-xl bg-surface-container-low hover:bg-surface-container border border-surface-container text-primary font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95"
+            class="h-9 px-2.5 sm:px-3.5 rounded-xl bg-surface-container-low hover:bg-surface-container border border-surface-container text-primary font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95"
+            title="Cetak PDF"
           >
             <span class="material-symbols-outlined text-[18px]">print</span>
-            <span>Cetak PDF</span>
+            <span class="hidden sm:inline">Cetak PDF</span>
           </button>
 
           <!-- Button Unduh CSV -->
           <button
             type="button"
             id="btnDownloadCsv"
-            class="h-9 px-3.5 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95"
+            class="h-9 px-2.5 sm:px-3.5 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95"
+            title="Unduh CSV"
           >
             <span class="material-symbols-outlined text-[18px]">download</span>
-            <span>Unduh CSV</span>
+            <span class="hidden sm:inline">Unduh CSV</span>
+            <span class="sm:hidden">CSV</span>
           </button>
         </div>
       </header>
 
       <!-- Main Container -->
-      <main class="flex-1 p-8 space-y-6 max-w-7xl w-full">
+      <main class="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full">
 
         <!-- Header Title Banner -->
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -121,9 +133,9 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
             </p>
           </div>
 
-          <div class="text-right">
+          <div class="sm:text-right bg-surface-container-lowest sm:bg-transparent p-3 sm:p-0 rounded-xl border sm:border-0 border-surface-container">
             <span class="font-mono text-xs text-outline block">Periode Laporan:</span>
-            <span class="font-bold text-sm text-primary">{todayDisplay}</span>
+            <span class="font-bold text-sm text-primary" id="periodeDisplayLabel">Semua Periode ({todayDisplay})</span>
           </div>
         </div>
 
@@ -132,10 +144,10 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
           <!-- Metric 1: Total Omset Kotor -->
           <div class="bg-surface-container-lowest p-5 rounded-2xl border border-surface-container shadow-xs">
             <span class="font-label-action text-xs font-bold text-on-surface-variant uppercase tracking-wider block">Total Omset Penjualan</span>
-            <span class="font-currency-display text-2xl font-extrabold text-primary mt-1 block">
+            <span class="font-currency-display text-2xl font-extrabold text-primary mt-1 block" id="metricOmsetKotor">
               Rp {totalOmsetKotor.toLocaleString('id-ID')}
             </span>
-            <span class="font-body-sm text-[11px] text-on-surface-variant mt-1 block">
+            <span class="font-body-sm text-[11px] text-on-surface-variant mt-1 block" id="metricOmsetDetail">
               Tunai: Rp {totalTunai.toLocaleString('id-ID')} &bull; QRIS: Rp {totalQris.toLocaleString('id-ID')}
             </span>
           </div>
@@ -154,7 +166,7 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
           <!-- Metric 3: Laba Bersih Booth -->
           <div class="bg-surface-container-lowest p-5 rounded-2xl border border-surface-container shadow-xs">
             <span class="font-label-action text-xs font-bold text-on-surface-variant uppercase tracking-wider block">Laba Bersih Booth</span>
-            <span class="font-currency-display text-2xl font-extrabold text-on-surface mt-1 block">
+            <span class="font-currency-display text-2xl font-extrabold text-on-surface mt-1 block" id="metricLabaBersih">
               Rp {totalLabaBersihBooth.toLocaleString('id-ID')}
             </span>
             <span class="font-body-sm text-[11px] text-on-surface-variant mt-1 block">
@@ -174,34 +186,98 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
           </div>
         </div>
 
-        <!-- Filter Console (Hidden saat print) -->
-        <div class="bg-surface-container-lowest p-4 rounded-2xl border border-surface-container shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
-          <div class="flex items-center gap-1.5 flex-wrap" id="reportFilterNav">
-            <button
-              type="button"
-              class="report-filter-btn px-3.5 py-1.5 rounded-xl bg-primary text-on-primary font-bold text-xs shadow-xs transition"
-              data-filter="ALL"
-            >
-              Semua Transaksi ({allTx.length})
-            </button>
-            <button
-              type="button"
-              class="report-filter-btn px-3.5 py-1.5 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-semibold text-xs transition"
-              data-filter="TUNAI"
-            >
-              Tunai ({allTx.filter(t => t.metode === 'TUNAI').length})
-            </button>
-            <button
-              type="button"
-              class="report-filter-btn px-3.5 py-1.5 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-semibold text-xs transition"
-              data-filter="QRIS"
-            >
-              QRIS ({allTx.filter(t => t.metode === 'QRIS').length})
-            </button>
+        <!-- Filter Console: Dropdown Bulan + Cut Off + Metode (Hidden saat print) -->
+        <div class="bg-surface-container-lowest p-4 sm:p-5 rounded-2xl border border-surface-container shadow-xs space-y-4 print:hidden">
+          
+          <!-- Baris 1: Pengaturan Periode Bulan & Cut Off Tanggal -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pb-4 border-b border-surface-container">
+            <div class="flex flex-col gap-1">
+              <label for="filterMonthSelect" class="font-label-action text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
+                Pilih Bulan:
+              </label>
+              <select
+                id="filterMonthSelect"
+                class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-xl text-xs font-bold text-primary focus:outline-none focus:border-primary transition"
+              >
+                <option value="ALL">Semua Bulan</option>
+                <option value="2026-01">Januari 2026</option>
+                <option value="2026-02">Februari 2026</option>
+                <option value="2026-03">Maret 2026</option>
+                <option value="2026-04">April 2026</option>
+                <option value="2026-05">Mei 2026</option>
+                <option value="2026-06">Juni 2026</option>
+                <option value="2026-07">Juli 2026</option>
+                <option value="2026-08">Agustus 2026</option>
+                <option value="2026-09">September 2026</option>
+                <option value="2026-10">Oktober 2026</option>
+                <option value="2026-11">November 2026</option>
+                <option value="2026-12">Desember 2026</option>
+              </select>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label for="cutoffStartDate" class="font-label-action text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
+                Cut Off - Hari Mulai:
+              </label>
+              <input
+                type="date"
+                id="cutoffStartDate"
+                class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-xl text-xs font-mono font-bold text-on-surface focus:outline-none focus:border-primary transition"
+              />
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label for="cutoffEndDate" class="font-label-action text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">
+                Cut Off - Hari Terakhir:
+              </label>
+              <input
+                type="date"
+                id="cutoffEndDate"
+                class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-xl text-xs font-mono font-bold text-on-surface focus:outline-none focus:border-primary transition"
+              />
+            </div>
+
+            <div class="flex items-end gap-2">
+              <button
+                type="button"
+                id="btnResetCutoff"
+                class="h-10 px-4 w-full rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface-variant font-bold text-xs flex items-center justify-center gap-1.5 transition active:scale-95"
+              >
+                <span class="material-symbols-outlined text-[16px]">restart_alt</span>
+                <span>Reset Periode</span>
+              </button>
+            </div>
           </div>
-          <span class="text-xs text-on-surface-variant font-medium" id="reportCountInfo">
-            Menampilkan data buku kas operasional TinukuMart
-          </span>
+
+          <!-- Baris 2: Filter Metode Pembayaran -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-1.5 flex-wrap" id="reportFilterNav">
+              <button
+                type="button"
+                class="report-filter-btn px-3.5 py-1.5 rounded-xl bg-primary text-on-primary font-bold text-xs shadow-xs transition"
+                data-filter="ALL"
+              >
+                Semua Transaksi ({allTx.length})
+              </button>
+              <button
+                type="button"
+                class="report-filter-btn px-3.5 py-1.5 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-semibold text-xs transition"
+                data-filter="TUNAI"
+              >
+                Tunai ({allTx.filter(t => t.metode === 'TUNAI').length})
+              </button>
+              <button
+                type="button"
+                class="report-filter-btn px-3.5 py-1.5 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-semibold text-xs transition"
+                data-filter="QRIS"
+              >
+                QRIS ({allTx.filter(t => t.metode === 'QRIS').length})
+              </button>
+            </div>
+            <span class="text-xs text-on-surface-variant font-medium" id="reportCountInfo">
+              Menampilkan data buku kas operasional TinukuMart
+            </span>
+          </div>
         </div>
 
         <!-- Detail Table: Rekap Transaksi & Arus Kas -->
@@ -211,7 +287,7 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
               <h3 class="font-headline-sm text-base font-bold text-primary">Detail Rekapitulasi Kasir & Shift</h3>
               <p class="font-body-sm text-xs text-on-surface-variant">Arus kas keluar masuk per transaksi</p>
             </div>
-            <span class="px-2.5 py-1 rounded-full bg-surface-container text-on-surface font-label-numeric text-xs font-bold">
+            <span class="px-2.5 py-1 rounded-full bg-surface-container text-on-surface font-label-numeric text-xs font-bold" id="tableRowCountBadge">
               {allTx.length} Baris Data
             </span>
           </div>
@@ -240,8 +316,15 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
                     </td>
                   </tr>
                 ) : (
-                  allTx.map((tx, idx) => (
-                    <tr class="tx-row hover:bg-surface-container-low/50 transition" data-metode={tx.metode}>
+                  allTx.map((tx, idx) => {
+                    const txDate = tx.waktu ? String(tx.waktu).substring(0, 10) : '';
+                    return (
+                    <tr
+                      class="tx-row hover:bg-surface-container-low/50 transition"
+                      data-metode={tx.metode}
+                      data-date={txDate}
+                      data-total={tx.total || 0}
+                    >
                       <td class="py-3.5 px-4 text-center font-mono text-xs text-outline">{idx + 1}</td>
                       <td class="py-3.5 px-4 font-mono font-bold text-primary">#TM-{String(tx.id).padStart(4, '0')}</td>
                       <td class="py-3.5 px-4 font-mono text-xs text-on-surface-variant">
@@ -274,7 +357,8 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
                         </span>
                       </td>
                     </tr>
-                  ))
+                  );
+                  })
                 )}
               </tbody>
             </table>
@@ -300,42 +384,125 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
   </div>
 
   <script is:inline>
-    // Filter Transaksi Client-side (Semua, Tunai, QRIS)
     const filterButtons = document.querySelectorAll('.report-filter-btn');
     const txRows = document.querySelectorAll('.tx-row');
     const countInfo = document.getElementById('reportCountInfo');
+    const tableRowCountBadge = document.getElementById('tableRowCountBadge');
+    const monthSelect = document.getElementById('filterMonthSelect');
+    const startDateInput = document.getElementById('cutoffStartDate');
+    const endDateInput = document.getElementById('cutoffEndDate');
+    const resetCutoffBtn = document.getElementById('btnResetCutoff');
+    const periodeLabel = document.getElementById('periodeDisplayLabel');
 
-    filterButtons.forEach(btn => {
+    const metricOmsetKotor = document.getElementById('metricOmsetKotor');
+    const metricOmsetDetail = document.getElementById('metricOmsetDetail');
+    const metricLabaBersih = document.getElementById('metricLabaBersih');
+
+    let activeMetode = 'ALL';
+
+    const formatRp = (num) => 'Rp ' + Number(num || 0).toLocaleString('id-ID');
+
+    function applyAllFilters() {
+      const startDate = startDateInput?.value || '';
+      const endDate = endDateInput?.value || '';
+
+      let visibleCount = 0;
+      let totalOmset = 0;
+      let totalTunai = 0;
+      let totalQris = 0;
+
+      txRows.forEach((row) => {
+        const rowMetode = (row.getAttribute('data-metode') || '').toUpperCase();
+        const rowDate = row.getAttribute('data-date') || '';
+        const rowTotal = Number(row.getAttribute('data-total') || 0);
+
+        const matchMetode = activeMetode === 'ALL' || rowMetode === activeMetode;
+        const matchStart = !startDate || (rowDate && rowDate >= startDate);
+        const matchEnd = !endDate || (rowDate && rowDate <= endDate);
+
+        if (matchMetode && matchStart && matchEnd) {
+          row.classList.remove('hidden');
+          visibleCount++;
+          totalOmset += rowTotal;
+          if (rowMetode === 'TUNAI') totalTunai += rowTotal;
+          if (rowMetode === 'QRIS') totalQris += rowTotal;
+        } else {
+          row.classList.add('hidden');
+        }
+      });
+
+      // Update Metric Cards
+      if (metricOmsetKotor) metricOmsetKotor.textContent = formatRp(totalOmset);
+      if (metricOmsetDetail) metricOmsetDetail.textContent = `Tunai: ${formatRp(totalTunai)} • QRIS: ${formatRp(totalQris)}`;
+      if (metricLabaBersih) metricLabaBersih.textContent = formatRp(Math.max(0, Math.round(totalOmset * 0.22)));
+
+      if (tableRowCountBadge) tableRowCountBadge.textContent = `${visibleCount} Baris Data`;
+
+      if (countInfo) {
+        const metodeText = activeMetode === 'ALL' ? 'semua metode' : `metode ${activeMetode}`;
+        countInfo.textContent = `Menampilkan ${visibleCount} transaksi (${metodeText})`;
+      }
+
+      if (periodeLabel) {
+        if (startDate && endDate) {
+          periodeLabel.textContent = `${startDate} s/d ${endDate}`;
+        } else if (startDate) {
+          periodeLabel.textContent = `Mulai ${startDate}`;
+        } else if (endDate) {
+          periodeLabel.textContent = `Sampai ${endDate}`;
+        } else {
+          periodeLabel.textContent = 'Semua Periode';
+        }
+      }
+    }
+
+    // Dropdown Bulan -> otomatis mengisi Hari Mulai & Hari Terakhir (Cut Off)
+    monthSelect?.addEventListener('change', () => {
+      const val = monthSelect.value;
+      if (val === 'ALL') {
+        if (startDateInput) startDateInput.value = '';
+        if (endDateInput) endDateInput.value = '';
+      } else {
+        const [yearStr, monthStr] = val.split('-');
+        const year = Number(yearStr);
+        const month = Number(monthStr);
+        const lastDay = new Date(year, month, 0).getDate();
+        if (startDateInput) startDateInput.value = `${val}-01`;
+        if (endDateInput) endDateInput.value = `${val}-${String(lastDay).padStart(2, '0')}`;
+      }
+      applyAllFilters();
+    });
+
+    startDateInput?.addEventListener('change', () => {
+      if (monthSelect) monthSelect.value = 'ALL';
+      applyAllFilters();
+    });
+
+    endDateInput?.addEventListener('change', () => {
+      if (monthSelect) monthSelect.value = 'ALL';
+      applyAllFilters();
+    });
+
+    resetCutoffBtn?.addEventListener('click', () => {
+      if (monthSelect) monthSelect.value = 'ALL';
+      if (startDateInput) startDateInput.value = '';
+      if (endDateInput) endDateInput.value = '';
+      applyAllFilters();
+    });
+
+    // Filter Metode (Semua, Tunai, QRIS)
+    filterButtons.forEach((btn) => {
       btn.addEventListener('click', () => {
-        const filter = btn.dataset.filter || 'ALL';
-
-        // Update styling tombol aktif
-        filterButtons.forEach(b => {
+        activeMetode = (btn.dataset.filter || 'ALL').toUpperCase();
+        filterButtons.forEach((b) => {
           b.className = 'report-filter-btn px-3.5 py-1.5 rounded-xl bg-surface-container-low text-on-surface-variant hover:text-on-surface font-semibold text-xs transition';
         });
         btn.className = 'report-filter-btn px-3.5 py-1.5 rounded-xl bg-primary text-on-primary font-bold text-xs shadow-xs transition';
-
-        // Filter baris tabel
-        let visibleCount = 0;
-        txRows.forEach(row => {
-          const rowMetode = row.getAttribute('data-metode') || '';
-          if (filter === 'ALL' || rowMetode.toUpperCase() === filter.toUpperCase()) {
-            row.classList.remove('hidden');
-            visibleCount++;
-          } else {
-            row.classList.add('hidden');
-          }
-        });
-
-        if (countInfo) {
-          countInfo.textContent = filter === 'ALL'
-            ? `Menampilkan seluruh ${visibleCount} transaksi kasir`
-            : `Menampilkan ${visibleCount} transaksi metode ${filter}`;
-        }
+        applyAllFilters();
       });
     });
 
-    // CSV Export Handler
+    // CSV Export Handler (Hanya mengekspor baris yang sedang tampil sesuai Cut Off & Filter)
     document.getElementById('btnDownloadCsv')?.addEventListener('click', () => {
       const table = document.getElementById('reportTable');
       if (!table) return;
@@ -344,6 +511,7 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
       const rows = table.querySelectorAll('tr');
 
       for (let i = 0; i < rows.length; i++) {
+        if (rows[i].classList.contains('hidden')) continue;
         const row = [];
         const cols = rows[i].querySelectorAll('td, th');
         for (let j = 0; j < cols.length; j++) {
@@ -353,12 +521,23 @@ const totalSelisihKas = allHandovers.reduce((acc, h) => acc + (h.selisih || 0), 
         csv.push(row.join(','));
       }
 
+      const startDate = startDateInput?.value || '';
+      const endDate = endDateInput?.value || '';
+      let periodSuffix = new Date().toISOString().split('T')[0];
+      if (startDate && endDate) {
+        periodSuffix = `${startDate}_sd_${endDate}`;
+      } else if (startDate) {
+        periodSuffix = `mulai_${startDate}`;
+      } else if (endDate) {
+        periodSuffix = `sampai_${endDate}`;
+      }
+
       const csvString = csv.join('\n');
       const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.setAttribute('href', url);
-      a.setAttribute('download', `Laporan_Keuangan_TinukuMart_${new Date().toISOString().split('T')[0]}.csv`);
+      a.setAttribute('download', `Laporan_Keuangan_TinukuMart_${periodSuffix}.csv`);
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

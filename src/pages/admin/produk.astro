@@ -29,6 +29,9 @@ if (Astro.request.method === 'POST' && dbBinding) {
       const tipe = String(formData.get('tipe') || 'tinuku') as 'tinuku' | 'konsinyasi';
       const hargaJual = parseInt(String(formData.get('harga_jual') || '0'), 10);
       const hargaModal = parseInt(String(formData.get('harga_modal') || '0'), 10);
+      const namaPenitip = String(formData.get('nama_penitip') || '').trim() || null;
+      const noHpPenitip = String(formData.get('no_hp_penitip') || '').trim() || null;
+      const fotoUrl = String(formData.get('foto_url') || '').trim() || null;
 
       if (!nama || hargaJual <= 0) {
         notificationError = 'Nama produk dan harga jual valid wajib diisi.';
@@ -39,6 +42,9 @@ if (Astro.request.method === 'POST' && dbBinding) {
           harga_jual: hargaJual,
           harga_modal: hargaModal,
           is_active: true,
+          nama_penitip: namaPenitip,
+          no_hp_penitip: noHpPenitip,
+          foto_url: fotoUrl,
         });
         notificationMessage = `Produk "${nama}" berhasil ditambahkan.`;
       }
@@ -48,6 +54,9 @@ if (Astro.request.method === 'POST' && dbBinding) {
       const tipe = String(formData.get('tipe') || 'tinuku') as 'tinuku' | 'konsinyasi';
       const hargaJual = parseInt(String(formData.get('harga_jual') || '0'), 10);
       const hargaModal = parseInt(String(formData.get('harga_modal') || '0'), 10);
+      const namaPenitip = String(formData.get('nama_penitip') || '').trim() || null;
+      const noHpPenitip = String(formData.get('no_hp_penitip') || '').trim() || null;
+      const fotoUrl = String(formData.get('foto_url') || '').trim() || null;
 
       if (!id || !nama || hargaJual <= 0) {
         notificationError = 'Data produk tidak lengkap atau harga jual tidak valid.';
@@ -59,6 +68,9 @@ if (Astro.request.method === 'POST' && dbBinding) {
             tipe,
             harga_jual: hargaJual,
             harga_modal: hargaModal,
+            nama_penitip: namaPenitip,
+            no_hp_penitip: noHpPenitip,
+            foto_url: fotoUrl,
           })
           .where(eq(produk.id, id));
         notificationMessage = `Produk "${nama}" berhasil diperbarui.`;
@@ -105,27 +117,37 @@ const totalSemua = productList.length + totalTitipan;
     <AdminSidebar activePath="produk" userNama={userNama} />
 
     <!-- Main Content Area -->
-    <div class="flex-1 pl-64 flex flex-col min-w-0">
+    <div class="flex-1 lg:pl-64 pl-0 flex flex-col min-w-0 transition-all duration-300">
       
       <!-- Top Sticky Bar -->
-      <header class="h-16 bg-surface-container-lowest border-b border-surface-container px-8 flex items-center justify-between sticky top-0 z-30 shadow-xs">
-        <div class="flex items-center gap-3">
-          <span class="material-symbols-outlined text-primary text-[24px]">inventory_2</span>
-          <h2 class="font-headline-sm text-base font-bold text-primary">Manajemen Master Produk & Menu Booth</h2>
+      <header class="h-16 bg-surface-container-lowest border-b border-surface-container px-4 sm:px-6 lg:px-8 flex items-center justify-between sticky top-0 z-30 shadow-xs">
+        <div class="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <!-- Mobile Hamburger Toggle -->
+          <button
+            type="button"
+            class="btn-open-sidebar lg:hidden p-2 -ml-1 rounded-xl text-primary hover:bg-surface-container transition flex items-center justify-center shrink-0"
+            title="Buka Menu Navigasi"
+          >
+            <span class="material-symbols-outlined text-[24px]">menu</span>
+          </button>
+
+          <span class="material-symbols-outlined text-primary text-[24px] hidden sm:block">inventory_2</span>
+          <h2 class="font-headline-sm text-sm sm:text-base font-bold text-primary truncate">Manajemen Master Produk</h2>
         </div>
 
         <button
           type="button"
-          class="h-9 px-4 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95"
+          class="h-9 px-3 sm:px-4 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-bold text-xs flex items-center gap-1.5 shadow-xs transition active:scale-95 shrink-0"
           id="btnOpenTambahProduk"
         >
           <span class="material-symbols-outlined text-[18px]">add</span>
-          <span>Tambah Produk Baru</span>
+          <span class="hidden sm:inline">Tambah Produk Baru</span>
+          <span class="sm:hidden">Tambah</span>
         </button>
       </header>
 
       <!-- Main Container -->
-      <main class="flex-1 p-8 space-y-6 max-w-7xl w-full">
+      <main class="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl w-full">
 
         <!-- Flash Notifications -->
         {notificationMessage && (
@@ -249,17 +271,36 @@ const totalSemua = productList.length + totalTitipan;
                   const marginRp = p.harga_jual - p.harga_modal;
                   const marginPct = p.harga_modal > 0 ? Math.round((marginRp / p.harga_modal) * 100) : 0;
                   return (
-                    <tr class="product-row hover:bg-surface-container-low/50 transition" data-tipe="tinuku" data-name={p.nama.toLowerCase()}>
+                    <tr class="product-row hover:bg-surface-container-low/50 transition" data-tipe={p.tipe} data-name={p.nama.toLowerCase()}>
                       <td class="py-3.5 px-4 text-center font-mono text-xs text-outline">{idx + 1}</td>
                       <td class="py-3.5 px-4 font-bold text-primary">
-                        <div class="flex items-center gap-2">
-                          <span class="material-symbols-outlined text-[18px] text-primary/70">lunch_dining</span>
-                          <span>{p.nama}</span>
+                        <div class="flex items-center gap-3">
+                          {p.foto_url ? (
+                            <img src={p.foto_url} alt={p.nama} class="w-10 h-10 rounded-lg object-cover border border-surface-container shrink-0 bg-white" />
+                          ) : (
+                            <div class="w-10 h-10 rounded-lg bg-surface-container-low border border-surface-container flex items-center justify-center shrink-0">
+                              <span class="material-symbols-outlined text-[18px] text-primary/70">
+                                {p.tipe === 'konsinyasi' ? 'handshake' : 'lunch_dining'}
+                              </span>
+                            </div>
+                          )}
+                          <div class="min-w-0">
+                            <span class="block truncate">{p.nama}</span>
+                            {p.nama_penitip && (
+                              <span class="text-[11px] font-normal text-on-surface-variant block">
+                                Penitip: {p.nama_penitip} {p.no_hp_penitip ? `(${p.no_hp_penitip})` : ''}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td class="py-3.5 px-4">
-                        <span class="px-2 py-0.5 rounded-full bg-primary-fixed text-primary font-bold text-[11px]">
-                          Menu Tinuku
+                        <span class={`px-2 py-0.5 rounded-full font-bold text-[11px] ${
+                          p.tipe === 'konsinyasi'
+                            ? 'bg-secondary-container text-on-secondary-container'
+                            : 'bg-primary-fixed text-primary'
+                        }`}>
+                          {p.tipe === 'konsinyasi' ? 'Titipan Mahasiswa' : 'Menu Tinuku'}
                         </span>
                       </td>
                       <td class="py-3.5 px-4 text-right font-mono text-xs text-on-surface-variant">
@@ -290,6 +331,9 @@ const totalSemua = productList.length + totalTitipan;
                             data-tipe={p.tipe}
                             data-modal={p.harga_modal}
                             data-jual={p.harga_jual}
+                            data-penitip={p.nama_penitip || ''}
+                            data-nohp={p.no_hp_penitip || ''}
+                            data-foto={p.foto_url || ''}
                           >
                             <span class="material-symbols-outlined text-[16px]">edit</span>
                           </button>
@@ -377,8 +421,8 @@ const totalSemua = productList.length + totalTitipan;
 
     <!-- Modal Tambah Produk Baru -->
     <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs hidden flex items-center justify-center p-4" id="modalTambahProduk">
-      <div class="w-full max-w-md bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container overflow-hidden flex flex-col">
-        <div class="px-5 py-4 bg-primary text-on-primary flex items-center justify-between">
+      <div class="w-full max-w-md bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container overflow-hidden flex flex-col max-h-[90vh]">
+        <div class="px-5 py-4 bg-primary text-on-primary flex items-center justify-between shrink-0">
           <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-secondary-container text-[22px]">add_box</span>
             <h3 class="font-headline-sm text-base font-bold">Tambah Produk Baru</h3>
@@ -388,8 +432,21 @@ const totalSemua = productList.length + totalTitipan;
           </button>
         </div>
 
-        <form method="POST" class="p-5 flex flex-col gap-3.5">
+        <form method="POST" class="p-5 flex flex-col gap-3.5 overflow-y-auto">
           <input type="hidden" name="action" value="create" />
+          <input type="hidden" name="foto_url" id="addProdukFotoUrl" value="" />
+
+          <!-- Upload Foto Produk -->
+          <div class="flex items-center gap-3 p-3 bg-surface-container-low rounded-xl border border-surface-container">
+            <div class="w-16 h-16 rounded-xl bg-white border border-outline-variant flex items-center justify-center overflow-hidden shrink-0" id="addFotoPreviewBox">
+              <span class="material-symbols-outlined text-outline text-[28px]">add_a_photo</span>
+            </div>
+            <div class="flex-1 min-w-0">
+              <label class="font-label-action text-xs font-bold text-on-surface block mb-1">Foto Produk (Opsional):</label>
+              <input type="file" accept="image/*" id="addProdukFotoFile" class="text-xs text-on-surface-variant file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-primary-fixed file:text-primary hover:file:bg-primary-fixed-dim w-full" />
+              <span class="text-[10px] text-outline block mt-1">Otomatis dikompresi agar ringan.</span>
+            </div>
+          </div>
 
           <div class="flex flex-col gap-1">
             <label class="font-label-action text-xs font-bold text-on-surface">Nama Produk:</label>
@@ -398,10 +455,22 @@ const totalSemua = productList.length + totalTitipan;
 
           <div class="flex flex-col gap-1">
             <label class="font-label-action text-xs font-bold text-on-surface">Tipe Kategori:</label>
-            <select class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg text-sm" name="tipe">
+            <select class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg text-sm" name="tipe" id="addProdukTipe">
               <option value="tinuku">Menu Asli Tinuku</option>
               <option value="konsinyasi">Barang Titipan Mahasiswa</option>
             </select>
+          </div>
+
+          <!-- Detail Penitip -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-secondary-container/10 border border-secondary-container/30" id="addPenitipFields">
+            <div class="flex flex-col gap-1">
+              <label class="font-label-action text-xs font-bold text-on-surface">Nama Penitip:</label>
+              <input class="h-9 px-3 bg-white border border-outline-variant rounded-lg text-xs" name="nama_penitip" placeholder="Contoh: Sarah (FEB)" type="text" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="font-label-action text-xs font-bold text-on-surface">No. HP / WA Penitip:</label>
+              <input class="h-9 px-3 bg-white border border-outline-variant rounded-lg text-xs font-mono" name="no_hp_penitip" placeholder="0812xxxx" type="tel" />
+            </div>
           </div>
 
           <div class="grid grid-cols-2 gap-3">
@@ -415,7 +484,7 @@ const totalSemua = productList.length + totalTitipan;
             </div>
           </div>
 
-          <button type="submit" class="mt-2 w-full h-11 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-bold text-sm shadow-md transition flex items-center justify-center gap-1.5 active:scale-95">
+          <button type="submit" class="mt-2 w-full h-11 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-bold text-sm shadow-md transition flex items-center justify-center gap-1.5 active:scale-95 shrink-0">
             <span class="material-symbols-outlined text-[18px]">save</span>
             <span>Simpan Produk</span>
           </button>
@@ -425,8 +494,8 @@ const totalSemua = productList.length + totalTitipan;
 
     <!-- Modal Edit Produk -->
     <div class="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs hidden flex items-center justify-center p-4" id="modalEditProduk">
-      <div class="w-full max-w-md bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container overflow-hidden flex flex-col animate-scale-up">
-        <div class="px-5 py-4 bg-primary text-on-primary flex items-center justify-between">
+      <div class="w-full max-w-md bg-surface-container-lowest rounded-2xl shadow-2xl border border-surface-container overflow-hidden flex flex-col animate-scale-up max-h-[90vh]">
+        <div class="px-5 py-4 bg-primary text-on-primary flex items-center justify-between shrink-0">
           <div class="flex items-center gap-2">
             <span class="material-symbols-outlined text-secondary-container text-[22px]">edit_note</span>
             <h3 class="font-headline-sm text-base font-bold">Edit Data Produk</h3>
@@ -436,9 +505,22 @@ const totalSemua = productList.length + totalTitipan;
           </button>
         </div>
 
-        <form method="POST" class="p-5 flex flex-col gap-3.5">
+        <form method="POST" class="p-5 flex flex-col gap-3.5 overflow-y-auto">
           <input type="hidden" name="action" value="edit" />
           <input type="hidden" name="id" id="editProdukId" value="" />
+          <input type="hidden" name="foto_url" id="editProdukFotoUrl" value="" />
+
+          <!-- Edit Foto Produk -->
+          <div class="flex items-center gap-3 p-3 bg-surface-container-low rounded-xl border border-surface-container">
+            <div class="w-16 h-16 rounded-xl bg-white border border-outline-variant flex items-center justify-center overflow-hidden shrink-0" id="editFotoPreviewBox">
+              <span class="material-symbols-outlined text-outline text-[28px]">add_a_photo</span>
+            </div>
+            <div class="flex-1 min-w-0">
+              <label class="font-label-action text-xs font-bold text-on-surface block mb-1">Ganti Foto Produk:</label>
+              <input type="file" accept="image/*" id="editProdukFotoFile" class="text-xs text-on-surface-variant file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-primary-fixed file:text-primary hover:file:bg-primary-fixed-dim w-full" />
+              <button type="button" id="btnClearEditFoto" class="text-[11px] text-error font-semibold mt-1 hover:underline hidden">Hapus Foto</button>
+            </div>
+          </div>
 
           <div class="flex flex-col gap-1">
             <label class="font-label-action text-xs font-bold text-on-surface">Nama Produk:</label>
@@ -453,6 +535,18 @@ const totalSemua = productList.length + totalTitipan;
             </select>
           </div>
 
+          <!-- Detail Penitip -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-secondary-container/10 border border-secondary-container/30">
+            <div class="flex flex-col gap-1">
+              <label class="font-label-action text-xs font-bold text-on-surface">Nama Penitip:</label>
+              <input class="h-9 px-3 bg-white border border-outline-variant rounded-lg text-xs" id="editProdukPenitip" name="nama_penitip" placeholder="Contoh: Sarah (FEB)" type="text" />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="font-label-action text-xs font-bold text-on-surface">No. HP / WA Penitip:</label>
+              <input class="h-9 px-3 bg-white border border-outline-variant rounded-lg text-xs font-mono" id="editProdukNoHp" name="no_hp_penitip" placeholder="0812xxxx" type="tel" />
+            </div>
+          </div>
+
           <div class="grid grid-cols-2 gap-3">
             <div class="flex flex-col gap-1">
               <label class="font-label-action text-xs font-bold text-on-surface">Harga Modal (Rp):</label>
@@ -464,7 +558,7 @@ const totalSemua = productList.length + totalTitipan;
             </div>
           </div>
 
-          <div class="flex items-center gap-2 mt-2">
+          <div class="flex items-center gap-2 mt-2 shrink-0">
             <button type="button" id="btnCancelEditModal" class="w-1/3 h-11 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface-variant font-bold text-sm transition flex items-center justify-center">
               Batal
             </button>
@@ -487,6 +581,63 @@ const totalSemua = productList.length + totalTitipan;
     const editTipeInput = document.getElementById('editProdukTipe');
     const editModalInput = document.getElementById('editProdukModal');
     const editJualInput = document.getElementById('editProdukJual');
+    const editPenitipInput = document.getElementById('editProdukPenitip');
+    const editNoHpInput = document.getElementById('editProdukNoHp');
+    const editFotoUrlInput = document.getElementById('editProdukFotoUrl');
+    const editFotoPreviewBox = document.getElementById('editFotoPreviewBox');
+    const btnClearEditFoto = document.getElementById('btnClearEditFoto');
+
+    // Helper compress image to base64
+    function handleImageUpload(fileInput, hiddenInput, previewBox, clearBtn) {
+      fileInput?.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_SIZE = 240;
+            let w = img.width;
+            let h = img.height;
+            if (w > h) {
+              if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; }
+            } else {
+              if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; }
+            }
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL('image/webp', 0.75);
+            if (hiddenInput) hiddenInput.value = dataUrl;
+            if (previewBox) previewBox.innerHTML = `<img src="${dataUrl}" class="w-full h-full object-cover" />`;
+            if (clearBtn) clearBtn.classList.remove('hidden');
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    handleImageUpload(
+      document.getElementById('addProdukFotoFile'),
+      document.getElementById('addProdukFotoUrl'),
+      document.getElementById('addFotoPreviewBox'),
+      null
+    );
+    handleImageUpload(
+      document.getElementById('editProdukFotoFile'),
+      editFotoUrlInput,
+      editFotoPreviewBox,
+      btnClearEditFoto
+    );
+
+    btnClearEditFoto?.addEventListener('click', () => {
+      if (editFotoUrlInput) editFotoUrlInput.value = '';
+      if (editFotoPreviewBox) editFotoPreviewBox.innerHTML = '<span class="material-symbols-outlined text-outline text-[28px]">add_a_photo</span>';
+      btnClearEditFoto.classList.add('hidden');
+    });
 
     // Handler Tambah Produk Modal
     document.getElementById('btnOpenTambahProduk')?.addEventListener('click', () => modalTambah?.classList.remove('hidden'));
@@ -500,12 +651,28 @@ const totalSemua = productList.length + totalTitipan;
         const tipe = btn.getAttribute('data-tipe') || 'tinuku';
         const modalVal = btn.getAttribute('data-modal') || '';
         const jualVal = btn.getAttribute('data-jual') || '';
+        const penitipVal = btn.getAttribute('data-penitip') || '';
+        const noHpVal = btn.getAttribute('data-nohp') || '';
+        const fotoVal = btn.getAttribute('data-foto') || '';
 
         if (editIdInput) editIdInput.value = id;
         if (editNamaInput) editNamaInput.value = nama;
         if (editTipeInput) editTipeInput.value = tipe;
         if (editModalInput) editModalInput.value = modalVal;
         if (editJualInput) editJualInput.value = jualVal;
+        if (editPenitipInput) editPenitipInput.value = penitipVal;
+        if (editNoHpInput) editNoHpInput.value = noHpVal;
+        if (editFotoUrlInput) editFotoUrlInput.value = fotoVal;
+
+        if (editFotoPreviewBox) {
+          if (fotoVal) {
+            editFotoPreviewBox.innerHTML = `<img src="${fotoVal}" class="w-full h-full object-cover" />`;
+            btnClearEditFoto?.classList.remove('hidden');
+          } else {
+            editFotoPreviewBox.innerHTML = '<span class="material-symbols-outlined text-outline text-[28px]">add_a_photo</span>';
+            btnClearEditFoto?.classList.add('hidden');
+          }
+        }
 
         modalEdit?.classList.remove('hidden');
       });

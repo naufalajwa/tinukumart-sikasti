@@ -48,9 +48,12 @@ let allProducts: Array<{
   is_active: boolean;
   stok?: number;
   penitip?: string;
+  foto_url?: string | null;
 }> = [];
 
 let cashierUsers: Array<{ id: number; nama: string }> = [];
+let activeAttendants: Array<{ id: number; nama: string }> = [];
+let registeredKonsinyasi: Array<typeof produk.$inferSelect> = [];
 let consignmentItems: Array<typeof konsinyasi.$inferSelect> = [];
 
 if (dbBinding) {
@@ -65,6 +68,11 @@ if (dbBinding) {
 
   if (openShift) {
     activeShift = openShift;
+    activeAttendants = await db
+      .select({ id: users.id, nama: users.nama })
+      .from(shiftPenjaga)
+      .innerJoin(users, eq(shiftPenjaga.user_id, users.id))
+      .where(eq(shiftPenjaga.shift_id, openShift.id));
   }
 
   // Ambil Produk Tinuku yang Aktif
@@ -72,6 +80,8 @@ if (dbBinding) {
     .select()
     .from(produk)
     .where(eq(produk.is_active, true));
+
+  registeredKonsinyasi = dbProduk.filter((p) => p.tipe === 'konsinyasi');
 
   // Ambil Konsinyasi Aktif Hari Ini
   const dbKonsinyasi = await db
@@ -83,24 +93,28 @@ if (dbBinding) {
 
   // Gabungkan produk untuk katalog POS
   allProducts = [
-    ...dbProduk.map((p) => ({
-      id: p.id,
-      nama: p.nama,
-      tipe: 'tinuku' as const,
-      harga_jual: p.harga_jual,
-      harga_modal: p.harga_modal,
-      is_active: p.is_active,
-      stok: 25, // default catalog stock
-    })),
+    ...dbProduk
+      .filter((p) => p.tipe === 'tinuku')
+      .map((p) => ({
+        id: p.id,
+        nama: p.nama,
+        tipe: 'tinuku' as const,
+        harga_jual: p.harga_jual,
+        harga_modal: p.harga_modal,
+        is_active: p.is_active,
+        stok: 25,
+        foto_url: p.foto_url,
+      })),
     ...dbKonsinyasi.map((k) => ({
       id: k.id,
       nama: `${k.nama_produk} (Titipan)`,
       tipe: 'konsinyasi' as const,
-      harga_jual: Math.round(k.harga_awal * 1.2), // harga jual dengan margin default
+      harga_jual: Math.round(k.harga_awal * 1.2),
       harga_modal: k.harga_awal,
       is_active: true,
       stok: k.qty_sisa,
       penitip: k.penitip,
+      foto_url: dbProduk.find((p) => p.nama === k.nama_produk)?.foto_url || null,
     })),
   ];
 
@@ -137,7 +151,13 @@ const orderCode = `TM-${randomOrderNum}`;
         <!-- Brand & Booth Location -->
         <div class="flex items-center gap-space-md shrink-0">
           <a href="/kasir/dashboard" class="flex items-center gap-space-xs hover:opacity-90 transition-opacity">
-            <span class="material-symbols-outlined text-primary text-[28px]">storefront</span>
+            <img
+              src="/logo-tinuku.png"
+              alt="Logo Tinuku"
+              class="w-8 h-8 object-contain rounded-lg"
+              onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';"
+            />
+            <span class="material-symbols-outlined text-primary text-[28px] hidden">storefront</span>
             <span class="font-headline-sm text-lg font-bold text-primary">TinukuMart</span>
           </a>
           <div class="h-6 w-[1.5px] bg-outline-variant/60 hidden sm:block"></div>
@@ -156,15 +176,17 @@ const orderCode = `TM-${randomOrderNum}`;
           </div>
           <div class="h-6 w-[1px] bg-outline-variant/50 hidden md:block"></div>
 
-          <!-- Active Cashier Profile -->
+          <!-- Active Cashier Profile (Pekerja Aktif Saat Shift) -->
           <div class="flex items-center gap-2">
             <div class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-xs shadow-xs">
               {userNama.substring(0, 2).toUpperCase()}
             </div>
-            <div class="hidden sm:flex flex-col text-left">
-              <span class="font-label-action text-[13px] font-bold text-primary leading-tight">{userNama}</span>
+            <div class="hidden sm:flex flex-col text-left max-w-[180px]">
+              <span class="font-label-action text-[12px] font-bold text-primary leading-tight truncate">
+                {activeAttendants.length > 0 ? activeAttendants.map(a => a.nama).join(', ') : userNama}
+              </span>
               <span class="font-body-sm text-[11px] text-on-surface-variant font-medium">
-                {activeShift ? `Shift ${activeShift.shift_ke}` : 'Belum Buka Shift'}
+                {activeShift ? `Shift ${activeShift.shift_ke} Aktif` : 'Belum Buka Shift'}
               </span>
             </div>
           </div>
@@ -326,13 +348,17 @@ const orderCode = `TM-${randomOrderNum}`;
                     </span>
                   </div>
 
-                  <!-- Product Icon Thumbnail -->
+                  <!-- Product Icon / Photo Thumbnail -->
                   <div class="h-28 w-full rounded-lg bg-surface-container-low mb-2.5 overflow-hidden relative flex items-center justify-center">
-                    <span class="material-symbols-outlined text-[48px] text-primary/40 group-hover:scale-110 transition-transform">
-                      {p.tipe === 'tinuku' ? 'lunch_dining' : 'bakery_dining'}
-                    </span>
+                    {p.foto_url ? (
+                      <img src={p.foto_url} alt={p.nama} class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    ) : (
+                      <span class="material-symbols-outlined text-[48px] text-primary/40 group-hover:scale-110 transition-transform">
+                        {p.tipe === 'tinuku' ? 'lunch_dining' : 'bakery_dining'}
+                      </span>
+                    )}
                     {p.tipe === 'konsinyasi' && (
-                      <span class="absolute top-1.5 right-1.5 px-1.5 py-0.5 bg-secondary-gold text-white font-label-badge text-[10px] rounded font-bold">
+                      <span class="absolute top-1.5 right-1.5 px-1.5 py-0.5 bg-secondary-gold text-white font-label-badge text-[10px] rounded font-bold shadow-xs">
                         KONSINYASI
                       </span>
                     )}
@@ -423,7 +449,7 @@ const orderCode = `TM-${randomOrderNum}`;
             >
               <div class="flex items-center gap-2">
                 <span class="material-symbols-outlined text-[24px]">payments</span>
-                <span class="font-headline-sm text-[16px] tracking-wide">💵 BAYAR TUNAI</span>
+                <span class="font-headline-sm text-[16px] tracking-wide">BAYAR TUNAI</span>
               </div>
               <span class="text-[12px] font-label-numeric px-2 py-0.5 rounded bg-black/10 text-on-secondary-container">[F9]</span>
             </button>
@@ -436,7 +462,7 @@ const orderCode = `TM-${randomOrderNum}`;
             >
               <div class="flex items-center gap-2">
                 <span class="material-symbols-outlined text-[24px] text-secondary-container">qr_code_scanner</span>
-                <span class="font-headline-sm text-[16px] tracking-wide">📱 BAYAR QRIS</span>
+                <span class="font-headline-sm text-[16px] tracking-wide">BAYAR QRIS</span>
               </div>
               <span class="text-[12px] font-label-numeric px-2 py-0.5 rounded bg-white/20 text-on-primary">[F10]</span>
             </button>
@@ -588,23 +614,43 @@ const orderCode = `TM-${randomOrderNum}`;
           </button>
         </div>
 
-        <form class="p-5 flex flex-col gap-3.5 max-h-[75vh] overflow-y-auto" id="formInputTitipan">
-          <div class="flex flex-col gap-1">
-            <label class="font-label-action text-[12px] font-bold text-on-surface">Nama Produk Titipan:</label>
-            <input
-              class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg text-on-surface text-[13px] focus:outline-none focus:border-primary"
-              id="titipanNamaProduk"
-              placeholder="Contoh: Risol Mayo Lumer Spesial"
+        <form class="p-5 flex flex-col gap-4 max-h-[75vh] overflow-y-auto" id="formInputTitipan">
+          <div class="flex flex-col gap-1.5">
+            <label class="font-label-action text-[12px] font-bold text-on-surface">Pilih Barang Titipan (Terdaftar):</label>
+            <select
+              id="selectPosKonsinyasi"
+              class="h-11 px-3 bg-surface-container-low border border-outline-variant rounded-xl text-on-surface text-[13px] font-semibold focus:outline-none focus:border-primary"
               required
-              type="text"
-            />
+            >
+              <option value="">-- Pilih Barang Titipan --</option>
+              {registeredKonsinyasi.map((p) => {
+                const penitipStr = p.nama_penitip
+                  ? `${p.nama_penitip}${p.no_hp_penitip ? ` (${p.no_hp_penitip})` : ''}`
+                  : 'Penitip Umum';
+                return (
+                  <option
+                    value={p.id}
+                    data-nama={p.nama}
+                    data-harga={p.harga_modal}
+                    data-penitip={penitipStr}
+                  >
+                    {p.nama} — {penitipStr} (Modal: Rp {p.harga_modal.toLocaleString('id-ID')})
+                  </option>
+                );
+              })}
+            </select>
+            {registeredKonsinyasi.length === 0 && (
+              <span class="text-[11px] text-error font-medium">
+                Belum ada barang titipan terdaftar. Minta Admin mendaftarkannya di menu Manajemen Produk.
+              </span>
+            )}
           </div>
 
-          <div class="flex flex-col gap-1">
-            <label class="font-label-action text-[12px] font-bold text-on-surface">Jumlah Titipan (Pcs / Porsi):</label>
+          <div class="flex flex-col gap-1.5">
+            <label class="font-label-action text-[12px] font-bold text-on-surface">Jumlah Titipan Masuk (Pcs / Porsi):</label>
             <div class="relative">
               <input
-                class="h-10 w-full pl-3 pr-12 bg-surface-container-low border border-outline-variant rounded-lg text-on-surface font-label-numeric text-[14px] font-bold focus:outline-none focus:border-primary"
+                class="h-11 w-full pl-3 pr-12 bg-surface-container-low border border-outline-variant rounded-xl text-on-surface font-label-numeric text-[15px] font-bold focus:outline-none focus:border-primary"
                 id="titipanQty"
                 min="1"
                 placeholder="20"
@@ -612,57 +658,13 @@ const orderCode = `TM-${randomOrderNum}`;
                 type="number"
                 value="20"
               />
-              <span class="absolute right-3 top-2.5 text-xs text-outline font-semibold">pcs</span>
+              <span class="absolute right-3.5 top-3 text-xs text-outline font-semibold">pcs</span>
             </div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-3">
-            <div class="flex flex-col gap-1">
-              <label class="font-label-action text-[12px] font-bold text-on-surface">Harga Pokok / Setor:</label>
-              <div class="relative">
-                <span class="absolute left-2.5 top-2.5 text-xs text-outline font-bold">Rp</span>
-                <input
-                  class="h-10 w-full pl-8 pr-2 bg-surface-container-low border border-outline-variant rounded-lg text-on-surface font-label-numeric text-[13px] font-bold focus:outline-none focus:border-primary"
-                  id="titipanHargaPokok"
-                  placeholder="2500"
-                  required
-                  type="number"
-                  value="2500"
-                />
-              </div>
-              <span class="text-[10px] text-outline">Hak pemilik titipan</span>
-            </div>
-            <div class="flex flex-col gap-1">
-              <label class="font-label-action text-[12px] font-bold text-primary">Harga Jual Konsumen:</label>
-              <div class="relative">
-                <span class="absolute left-2.5 top-2.5 text-xs text-primary font-bold">Rp</span>
-                <input
-                  class="h-10 w-full pl-8 pr-2 bg-surface-container-low border border-primary rounded-lg text-primary font-label-numeric text-[13px] font-bold focus:outline-none focus:border-primary"
-                  id="titipanHargaJual"
-                  placeholder="3000"
-                  required
-                  type="number"
-                  value="3000"
-                />
-              </div>
-              <span class="text-[10px] text-primary font-semibold">Margin booth otomatis dihitung</span>
-            </div>
-          </div>
-
-          <div class="flex flex-col gap-1">
-            <label class="font-label-action text-[12px] font-bold text-on-surface">Nama Penitip / Kontak Mahasiswa:</label>
-            <input
-              class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg text-on-surface text-[13px] focus:outline-none focus:border-primary"
-              id="titipanPenitip"
-              placeholder="Contoh: Sarah Aulia (0812-3456-7890 / FEB)"
-              required
-              type="text"
-            />
           </div>
 
           <button
             type="submit"
-            class="mt-2 w-full h-11 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-label-action text-[13px] font-bold shadow-md transition-all flex items-center justify-center gap-1.5 active:scale-95"
+            class="mt-1 w-full h-11 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-label-action text-[13px] font-bold shadow-md transition-all flex items-center justify-center gap-1.5 active:scale-95"
           >
             <span class="material-symbols-outlined text-[18px]">save</span>
             <span>Simpan Data Titipan Masuk</span>
@@ -757,23 +759,40 @@ const orderCode = `TM-${randomOrderNum}`;
             <span class="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
-        <div class="p-5 flex flex-col items-center gap-3 text-center">
-          <div class="text-xs text-on-surface-variant font-medium">Scan QRIS Dinamis via GoPay / BCA / ShopeePay / OVO / Dana:</div>
-          <div class="w-52 h-52 bg-white p-3 rounded-2xl border-2 border-dashed border-primary/30 flex flex-col items-center justify-center shadow-inner">
-            <span class="material-symbols-outlined text-[110px] text-primary">qr_code_2</span>
-            <span class="text-[11px] font-bold text-primary font-mono -mt-2">TinukuMart Kantin Pusat</span>
+        <div class="p-5 flex flex-col items-center gap-4 text-center">
+          <div class="w-full p-4 rounded-xl bg-surface-container-low border border-surface-container">
+            <span class="font-body-sm text-[11px] text-outline uppercase tracking-wider block font-bold">Total Tagihan QRIS:</span>
+            <span class="font-headline-md text-[28px] font-extrabold text-primary" id="qrisModalBillAmount">Rp 0</span>
           </div>
-          <div class="text-center">
-            <span class="font-body-sm text-[11px] text-outline block">Total Tagihan:</span>
-            <span class="font-headline-md text-[22px] font-extrabold text-primary" id="qrisModalBillAmount">Rp 0</span>
+
+          <div class="w-full p-3.5 rounded-xl bg-secondary-container/20 border border-secondary-container/40 text-left space-y-1.5">
+            <div class="flex items-center gap-2 text-primary font-bold text-xs">
+              <span class="material-symbols-outlined text-[18px] text-secondary-gold">verified_user</span>
+              <span>Konfirmasi Status Pembayaran QRIS</span>
+            </div>
+            <p class="text-[11px] text-on-surface-variant leading-relaxed">
+              Pastikan notifikasi pembayaran QRIS dari pelanggan sudah masuk dan terkonfirmasi pada perangkat / EDC booth sebelum menyelesaikan transaksi.
+            </p>
           </div>
-          <button
-            type="button"
-            class="w-full h-11 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-label-action text-[13px] font-bold shadow-md transition-all flex items-center justify-center gap-2 active:scale-95"
-            id="btnCompleteQrisTransaction"
-          >
-            <span class="material-symbols-outlined text-[18px]">done_all</span> Verifikasi Berhasil & Simpan
-          </button>
+
+          <div class="w-full grid grid-cols-2 gap-2.5 pt-1">
+            <button
+              type="button"
+              class="close-modal-btn h-11 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface-variant font-bold text-xs flex items-center justify-center gap-1.5 transition"
+              data-target="modalPembayaranQris"
+            >
+              <span class="material-symbols-outlined text-[18px]">schedule</span>
+              <span>Belum Masuk</span>
+            </button>
+            <button
+              type="button"
+              class="h-11 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-label-action text-xs font-bold shadow-md transition-all flex items-center justify-center gap-1.5 active:scale-95"
+              id="btnCompleteQrisTransaction"
+            >
+              <span class="material-symbols-outlined text-[18px] text-secondary-container">check_circle</span>
+              <span>Sudah Terkonfirmasi</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -904,12 +923,8 @@ const orderCode = `TM-${randomOrderNum}`;
   <!-- CLIENT-SIDE POS CONTROLLER ENGINE -->
   <script is:inline define:vars={{ activeShiftId: activeShift?.id || 1 }}>
     (() => {
-      // 1. STATE KERANJANG
-      let cart = [
-        { id: 1, name: 'Nasi Ayam Geprek Sambal Korek', price: 15000, modal: 10000, tipe: 'tinuku', qty: 2 },
-        { id: 2, name: 'Es Teh Kampus Jumbo', price: 5000, modal: 2000, tipe: 'tinuku', qty: 2 },
-        { id: 3, name: 'Risol Mayo Beef Melt (Titipan)', price: 8000, modal: 6500, tipe: 'konsinyasi', qty: 3 }
-      ];
+      // 1. STATE KERANJANG (Kosong saat awal masuk POS)
+      let cart = [];
 
       // DOM Elements
       const cartContainer = document.getElementById('cartItemsContainer');
@@ -1269,15 +1284,22 @@ const orderCode = `TM-${randomOrderNum}`;
       document.getElementById('triggerReturTitipanBtn')?.addEventListener('click', () => openModal(modalReturTitipan));
       document.getElementById('triggerTutupBoothBtn')?.addEventListener('click', () => openModal(modalTutupBooth));
 
-      // Form Input Titipan (UC03)
+      // Form Input Titipan (UC03 - Pilih barang terdaftar + jumlah)
       document.getElementById('formInputTitipan')?.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const selectEl = document.getElementById('selectPosKonsinyasi');
+        const opt = selectEl?.options[selectEl.selectedIndex];
+        if (!opt || !opt.value) {
+          showToast('Pilih barang titipan terlebih dahulu!', 'error');
+          return;
+        }
+
         const payload = {
           action: 'input',
-          nama_produk: document.getElementById('titipanNamaProduk').value,
+          nama_produk: opt.getAttribute('data-nama') || '',
           qty_masuk: document.getElementById('titipanQty').value,
-          harga_awal: document.getElementById('titipanHargaPokok').value,
-          penitip: document.getElementById('titipanPenitip').value,
+          harga_awal: opt.getAttribute('data-harga') || '0',
+          penitip: opt.getAttribute('data-penitip') || '',
         };
 
         try {

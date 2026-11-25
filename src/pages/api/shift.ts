@@ -22,15 +22,23 @@ export const POST: APIRoute = async ({ request, locals, cookies, redirect }) => 
     const contentType = request.headers.get('content-type') || '';
     const acceptsJson = (request.headers.get('accept') || '').includes('application/json');
     let body: Record<string, any> = {};
+    let penjagaIds: number[] = [];
 
     if (contentType.includes('application/json')) {
       body = await request.json();
+      if (Array.isArray(body.penjaga_ids)) {
+        penjagaIds = body.penjaga_ids.map(Number).filter((n: number) => !isNaN(n) && n > 0);
+      }
     } else if (
       contentType.includes('application/x-www-form-urlencoded') ||
       contentType.includes('multipart/form-data')
     ) {
       const formData = await request.formData();
       body = Object.fromEntries(formData.entries());
+      penjagaIds = formData
+        .getAll('penjaga_ids')
+        .map((val) => Number(val))
+        .filter((n) => !isNaN(n) && n > 0);
     }
 
     // Validasi session kasir
@@ -127,11 +135,14 @@ export const POST: APIRoute = async ({ request, locals, cookies, redirect }) => 
         })
         .returning({ id: shifts.id });
 
-      // Simpan pivot penjaga
-      await db.insert(shiftPenjaga).values({
-        shift_id: newShift.id,
-        user_id: currentUserId,
-      });
+      // Simpan pivot penjaga (bisa lebih dari 1)
+      const uniquePenjagaIds = Array.from(new Set(penjagaIds.length > 0 ? penjagaIds : [currentUserId]));
+      for (const uid of uniquePenjagaIds) {
+        await db.insert(shiftPenjaga).values({
+          shift_id: newShift.id,
+          user_id: uid,
+        });
+      }
 
       const successMsg = `Shift ${shiftKe} berhasil dibuka dengan modal awal Rp ${modalAwal.toLocaleString('id-ID')}!`;
 

@@ -9,6 +9,8 @@ export const users = sqliteTable('users', {
   nama: text('nama').notNull(),
   pin: text('pin').notNull(),
   role: text('role', { enum: ['kasir', 'admin'] }).notNull().default('kasir'),
+  no_hp: text('no_hp'),
+  email: text('email'),
 });
 
 // ==========================================
@@ -21,6 +23,9 @@ export const produk = sqliteTable('produk', {
   harga_jual: integer('harga_jual').notNull(),
   harga_modal: integer('harga_modal').notNull(),
   is_active: integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  nama_penitip: text('nama_penitip'),
+  no_hp_penitip: text('no_hp_penitip'),
+  foto_url: text('foto_url'),
 });
 
 // ==========================================

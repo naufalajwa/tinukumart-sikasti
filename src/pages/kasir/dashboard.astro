@@ -44,9 +44,16 @@ const errorMsg = Astro.url.searchParams.get('error') || '';
 const dbBinding = Astro.locals?.runtime?.env?.DB;
 let activeShift: typeof shifts.$inferSelect | null = null;
 let attendantNames: string[] = [];
+let allCashiers: Array<{ id: number; nama: string }> = [];
 
 if (dbBinding) {
   const db = createDb(dbBinding);
+
+  // Ambil seluruh kasir terdaftar untuk opsi pilihan penjaga shift
+  allCashiers = await db
+    .select({ id: users.id, nama: users.nama })
+    .from(users)
+    .where(eq(users.role, 'kasir'));
 
   const [openShift] = await db
     .select()
@@ -81,7 +88,13 @@ if (dbBinding) {
         <!-- Brand & Booth Location -->
         <div class="flex items-center gap-space-md shrink-0">
           <div class="flex items-center gap-space-xs">
-            <span class="material-symbols-outlined text-primary text-[28px]">storefront</span>
+            <img
+              src="/logo-tinuku.png"
+              alt="Logo Tinuku"
+              class="w-7 h-7 object-contain rounded-lg"
+              onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';"
+            />
+            <span class="material-symbols-outlined text-primary text-[28px] hidden">storefront</span>
             <span class="font-headline-sm text-lg font-bold text-primary">TinukuMart</span>
           </div>
           <div class="h-6 w-[1.5px] bg-outline-variant/60 hidden sm:block"></div>
@@ -354,17 +367,39 @@ if (dbBinding) {
                 </div>
               </div>
 
-              <!-- 3. Teks Informatif Penjaga Sesuai Ketentuan -->
-              <div class="bg-surface-container-low rounded-xl p-4 border border-surface-container text-xs text-on-surface flex items-start gap-3">
-                <span class="material-symbols-outlined text-primary text-[20px] shrink-0 mt-0.5">account_circle</span>
-                <div class="space-y-1">
-                  <p class="font-bold text-sm text-primary">
-                    Penjaga Shift: <span class="underline">{userNama}</span> (ID Petugas: #{userId})
-                  </p>
-                  <p class="text-on-surface-variant leading-relaxed">
-                    Shift ini akan otomatis dicatat atas nama Anda. Pergantian penjaga shift dapat dilakukan langsung dari layar kasir.
-                  </p>
+              <!-- 3. Pilih Penjaga yang Bertugas (Bisa Lebih dari 1) -->
+              <div>
+                <label class="block font-label-action text-xs font-bold text-on-surface uppercase tracking-wider mb-2">
+                  3. Pilih Penjaga yang Bertugas (Bisa Pilih &gt; 1 Orang)
+                </label>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-surface-container-low p-3.5 rounded-xl border border-surface-container">
+                  {allCashiers.map((c) => {
+                    const isSelf = String(c.id) === String(userId);
+                    return (
+                      <label class="flex items-center gap-3 p-2.5 rounded-xl bg-surface-container-lowest border border-surface-container hover:border-primary cursor-pointer transition shadow-2xs">
+                        <input
+                          type="checkbox"
+                          name="penjaga_ids"
+                          value={c.id}
+                          checked={isSelf}
+                          class="w-4 h-4 rounded text-primary focus:ring-primary accent-primary"
+                        />
+                        <div class="flex items-center gap-2 min-w-0">
+                          <div class="w-7 h-7 rounded-full bg-primary-fixed text-primary flex items-center justify-center font-bold text-[11px] shrink-0">
+                            {c.nama.substring(0, 2).toUpperCase()}
+                          </div>
+                          <div class="min-w-0">
+                            <span class="font-bold text-sm text-on-surface block truncate">{c.nama}</span>
+                            <span class="text-[10px] text-outline">{isSelf ? 'Anda (Login Saat Ini)' : `Kasir #${c.id}`}</span>
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
                 </div>
+                <span class="text-[11px] text-on-surface-variant mt-1.5 block">
+                  Centang seluruh rekan kasir yang aktif bertugas bersama Anda pada shift ini.
+                </span>
               </div>
 
               <!-- Tombol Submit Buka Shift -->

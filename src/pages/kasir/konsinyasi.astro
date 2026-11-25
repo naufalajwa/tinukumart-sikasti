@@ -1,8 +1,8 @@
 ---
 import Layout from '@/layouts/Layout.astro';
 import { createDb } from '@db/index';
-import { konsinyasi } from '@db/schema';
-import { desc } from 'drizzle-orm';
+import { konsinyasi, produk } from '@db/schema';
+import { desc, eq, and } from 'drizzle-orm';
 
 // 1. Session Kasir Check
 const userRole = Astro.cookies.get('user_role')?.value;
@@ -29,6 +29,7 @@ const todayDate = getTodayDateStr();
 // 3. Database Query
 const dbBinding = Astro.locals?.runtime?.env?.DB;
 let allKonsinyasi: Array<typeof konsinyasi.$inferSelect> = [];
+let registeredKonsinyasi: Array<typeof produk.$inferSelect> = [];
 
 if (dbBinding) {
   const db = createDb(dbBinding);
@@ -36,6 +37,12 @@ if (dbBinding) {
     .select()
     .from(konsinyasi)
     .orderBy(desc(konsinyasi.id));
+
+  registeredKonsinyasi = await db
+    .select()
+    .from(produk)
+    .where(and(eq(produk.tipe, 'konsinyasi'), eq(produk.is_active, true)))
+    .orderBy(desc(produk.id));
 }
 
 const activeItems = allKonsinyasi.filter((k) => k.status === 'OPEN');
@@ -237,29 +244,55 @@ const closedItems = allKonsinyasi.filter((k) => k.status === 'CLOSED');
           </button>
         </div>
 
-        <form class="p-5 flex flex-col gap-3.5" id="formNewTitipanPage">
-          <div class="flex flex-col gap-1">
-            <label class="font-label-action text-xs font-bold text-on-surface">Nama Produk Titipan:</label>
-            <input class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg text-sm" id="namaProdukInput" placeholder="Contoh: Risol Mayo Beef Melt" required type="text" />
+        <form class="p-5 flex flex-col gap-4" id="formNewTitipanPage">
+          <div class="flex flex-col gap-1.5">
+            <label class="font-label-action text-xs font-bold text-on-surface">Pilih Barang Titipan (Terdaftar):</label>
+            <select
+              id="selectRegisteredKonsinyasi"
+              class="h-11 px-3 bg-surface-container-low border border-outline-variant rounded-xl text-sm font-semibold text-primary focus:outline-none focus:border-primary transition"
+              required
+            >
+              <option value="">-- Pilih Barang Titipan --</option>
+              {registeredKonsinyasi.map((p) => {
+                const penitipDisplay = p.nama_penitip
+                  ? `${p.nama_penitip}${p.no_hp_penitip ? ` (${p.no_hp_penitip})` : ''}`
+                  : 'Penitip Umum';
+                return (
+                  <option
+                    value={p.id}
+                    data-nama={p.nama}
+                    data-harga={p.harga_modal}
+                    data-penitip={penitipDisplay}
+                  >
+                    {p.nama} — {penitipDisplay} (Modal: Rp {p.harga_modal.toLocaleString('id-ID')})
+                  </option>
+                );
+              })}
+            </select>
+            {registeredKonsinyasi.length === 0 && (
+              <span class="text-[11px] text-error font-medium">
+                Belum ada barang titipan terdaftar. Minta Admin mendaftarkannya di menu Manajemen Produk.
+              </span>
+            )}
           </div>
 
-          <div class="flex flex-col gap-1">
-            <label class="font-label-action text-xs font-bold text-on-surface">Jumlah Titipan (Pcs):</label>
-            <input class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg font-mono text-sm font-bold" id="qtyInput" min="1" placeholder="20" required type="number" value="20" />
+          <div class="p-3 rounded-xl bg-surface-container-low border border-surface-container text-xs space-y-1 hidden" id="selectedKonsinyasiInfo">
+            <div class="flex justify-between">
+              <span class="text-on-surface-variant">Penitip:</span>
+              <span class="font-bold text-on-surface" id="infoPenitip">-</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-on-surface-variant">Harga Pokok Penitip:</span>
+              <span class="font-mono font-bold text-primary" id="infoHarga">Rp 0</span>
+            </div>
           </div>
 
-          <div class="flex flex-col gap-1">
-            <label class="font-label-action text-xs font-bold text-on-surface">Harga Pokok Penitip (Rp):</label>
-            <input class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg font-mono text-sm font-bold" id="hargaInput" placeholder="2500" required type="number" value="2500" />
-            <span class="text-[11px] text-outline">Hak per pcs yang akan dibayarkan ke penitip saat barang laku.</span>
+          <div class="flex flex-col gap-1.5">
+            <label class="font-label-action text-xs font-bold text-on-surface">Jumlah Titipan Masuk (Pcs):</label>
+            <input class="h-11 px-3 bg-surface-container-low border border-outline-variant rounded-xl font-mono text-base font-bold focus:outline-none focus:border-primary" id="qtyInput" min="1" placeholder="20" required type="number" value="20" />
           </div>
 
-          <div class="flex flex-col gap-1">
-            <label class="font-label-action text-xs font-bold text-on-surface">Nama Penitip & Kontak:</label>
-            <input class="h-10 px-3 bg-surface-container-low border border-outline-variant rounded-lg text-sm" id="penitipInput" placeholder="Contoh: Sarah Aulia (0812-xxxx / FEB)" required type="text" />
-          </div>
-
-          <button type="submit" class="mt-2 w-full h-11 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-bold text-sm shadow-md transition flex items-center justify-center gap-1.5 active:scale-95">
+          <button type="submit" class="mt-1 w-full h-11 rounded-xl bg-primary hover:bg-primary-dark text-on-primary font-bold text-sm shadow-md transition flex items-center justify-center gap-1.5 active:scale-95">
             <span class="material-symbols-outlined text-[18px]">save</span>
             <span>Simpan Barang Titipan</span>
           </button>
@@ -273,19 +306,40 @@ const closedItems = allKonsinyasi.filter((k) => k.status === 'CLOSED');
     const modal = document.getElementById('modalInputTitipanPage');
     const openBtn = document.getElementById('btnOpenNewTitipanModal');
     const closeBtn = document.getElementById('btnCloseNewTitipanModal');
+    const selectItem = document.getElementById('selectRegisteredKonsinyasi');
+    const infoBox = document.getElementById('selectedKonsinyasiInfo');
+    const infoPenitip = document.getElementById('infoPenitip');
+    const infoHarga = document.getElementById('infoHarga');
 
     openBtn?.addEventListener('click', () => modal?.classList.remove('hidden'));
     closeBtn?.addEventListener('click', () => modal?.classList.add('hidden'));
 
+    selectItem?.addEventListener('change', () => {
+      const opt = selectItem.options[selectItem.selectedIndex];
+      if (!opt || !opt.value) {
+        infoBox?.classList.add('hidden');
+        return;
+      }
+      if (infoPenitip) infoPenitip.textContent = opt.getAttribute('data-penitip') || '-';
+      if (infoHarga) infoHarga.textContent = 'Rp ' + Number(opt.getAttribute('data-harga') || 0).toLocaleString('id-ID');
+      infoBox?.classList.remove('hidden');
+    });
+
     // Submit New Titipan (UC03)
     document.getElementById('formNewTitipanPage')?.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const opt = selectItem?.options[selectItem.selectedIndex];
+      if (!opt || !opt.value) {
+        alert('Silakan pilih barang titipan terlebih dahulu.');
+        return;
+      }
+
       const payload = {
         action: 'input',
-        nama_produk: document.getElementById('namaProdukInput').value,
+        nama_produk: opt.getAttribute('data-nama') || '',
         qty_masuk: document.getElementById('qtyInput').value,
-        harga_awal: document.getElementById('hargaInput').value,
-        penitip: document.getElementById('penitipInput').value,
+        harga_awal: opt.getAttribute('data-harga') || '0',
+        penitip: opt.getAttribute('data-penitip') || '',
       };
 
       try {
