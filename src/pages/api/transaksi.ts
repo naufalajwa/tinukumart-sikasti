@@ -52,6 +52,22 @@ export const POST: APIRoute = async ({ request, locals, cookies }) => {
     }
 
     const db = createDb(dbBinding);
+    const totalNum = Math.round(Number(total));
+    const metodeValid = metode === 'QRIS' ? 'QRIS' : 'TUNAI';
+    const cashDiterimaNum = metodeValid === 'TUNAI'
+      ? Math.round(Number(cash_diterima ?? 0))
+      : totalNum;
+
+    if (metodeValid === 'TUNAI' && cashDiterimaNum < totalNum) {
+      return new Response(JSON.stringify({ error: 'Uang diterima kurang dari total belanja.' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const kembalianNum = metodeValid === 'TUNAI'
+      ? Math.max(0, cashDiterimaNum - totalNum)
+      : 0;
 
     // 1. Simpan Transaksi Utama
     const nowIso = new Date().toISOString();
@@ -59,10 +75,10 @@ export const POST: APIRoute = async ({ request, locals, cookies }) => {
       .insert(transactions)
       .values({
         shift_id: Number(shift_id),
-        metode: metode === 'QRIS' ? 'QRIS' : 'TUNAI',
-        total: Math.round(Number(total)),
-        cash_diterima: cash_diterima !== undefined ? Math.round(Number(cash_diterima)) : null,
-        kembalian: kembalian !== undefined ? Math.round(Number(kembalian)) : null,
+        metode: metodeValid,
+        total: totalNum,
+        cash_diterima: cashDiterimaNum,
+        kembalian: kembalianNum,
         waktu: nowIso,
       })
       .returning({ id: transactions.id });
@@ -97,8 +113,10 @@ export const POST: APIRoute = async ({ request, locals, cookies }) => {
         success: true,
         transactionId: insertedTx.id,
         waktu: nowIso,
-        total: Math.round(Number(total)),
-        metode,
+        total: totalNum,
+        cash_diterima: cashDiterimaNum,
+        kembalian: kembalianNum,
+        metode: metodeValid,
         message: 'Transaksi berhasil disimpan ke database.',
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
